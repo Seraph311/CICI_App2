@@ -14,7 +14,10 @@ export default function JobItem({ job, onRun, onDelete, onToggle }) {
     <h3>{job.name}</h3>
     <p><strong>Schedule:</strong> {job.schedule}</p>
     <p><strong>Command:</strong> <code>{job.command}</code></p>
-    <p><strong>Status:</strong> <span style={{ color: statusColor }}>{job.status || "unknown"}</span></p>
+    <p>
+    <strong>Status:</strong>{" "}
+    <span style={{ color: statusColor }}>{job.status || "unknown"}</span>
+    </p>
     </div>
 
     <div className="job-actions">
