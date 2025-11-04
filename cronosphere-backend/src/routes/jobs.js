@@ -1,10 +1,11 @@
 import express from 'express';
 import cron from 'node-cron';
 import { pool } from '../db.js';
-import { scheduleJob, cancelJob } from '../scheduler.js';
+import { scheduleJob, cancelJob, scheduledJobs } from '../scheduler.js';
 
 const router = express.Router();
 
+// Simple API key check
 router.use((req, res, next) => {
   const apiKey = req.headers['x-api-key'];
   if (!process.env.API_KEY) return next(); // skip if not configured
@@ -13,6 +14,7 @@ router.use((req, res, next) => {
   next();
 });
 
+// Forbidden commands
 const FORBIDDEN_PATTERNS = [
   /(^|\s)sudo(\s|$)/i,
   /rm\s+-rf/i,
@@ -24,10 +26,7 @@ const FORBIDDEN_PATTERNS = [
 
 function isForbidden(command) {
   if (!command) return false;
-  for (const re of FORBIDDEN_PATTERNS) {
-    if (re.test(command)) return true;
-  }
-  return false;
+  return FORBIDDEN_PATTERNS.some(re => re.test(command));
 }
 
 // Create new job
@@ -52,7 +51,11 @@ router.post('/', async (req, res) => {
     );
 
     const job = result.rows[0];
-    scheduleJob(job);
+    // Only schedule active jobs
+    if (job.status === 'active') {
+      await scheduleJob(job);
+    }
+
     res.status(201).json(job);
   } catch (err) {
     console.error('POST /api/jobs error:', err);
@@ -74,65 +77,43 @@ router.post('/:id/run', async (req, res) => {
     const job = result.rows[0];
     if (!job) return res.status(404).json({ error: 'job not found' });
 
-    // Log the run first
-    const runResult = await pool.query(
-      'INSERT INTO job_runs (job_id, status) VALUES ($1, $2) RETURNING id',
-                                       [id, 'queued']
-    );
+    // Run manually without adding to scheduledJobs
+    await scheduleJob(job, true);
 
-    const runId = runResult.rows[0].id;
-
-    // Schedule job to run immediately
-    scheduleJob(job, true);
-
-    res.json({ ok: true, runId });
+    res.json({ ok: true });
   } catch (err) {
     console.error('POST /api/jobs/:id/run error:', err);
     res.status(500).json({ error: 'internal server error' });
   }
 });
 
-// Pause a job
-router.post('/:id/pause', async (req, res) => {
+// Toggle job status (pause/resume)
+router.put('/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('SELECT * FROM jobs WHERE id=$1', [id]);
-    const job = result.rows[0];
-    if (!job) return res.status(404).json({ error: 'job not found' });
+    const { status } = req.body;
+
+    if (!['active', 'paused'].includes(status))
+      return res.status(400).json({ error: 'invalid status' });
 
     // Update DB
-    await pool.query('UPDATE jobs SET status=$1 WHERE id=$2', ['paused', id]);
+    await pool.query('UPDATE jobs SET status=$1 WHERE id=$2', [status, id]);
 
-    // Stop scheduler task
-    cancelJob(id);
+    if (status === 'paused') {
+      // Stop any scheduled task
+      cancelJob(id);
+    } else {
+      // Resume job only if not already scheduled
+      if (!scheduledJobs.has(Number(id))) {
+        const result = await pool.query('SELECT * FROM jobs WHERE id=$1', [id]);
+        const job = result.rows[0];
+        if (job) await scheduleJob(job);
+      }
+    }
 
-    res.json({ ok: true, message: `Job ${id} paused` });
+    res.json({ ok: true, status });
   } catch (err) {
-    console.error('POST /api/jobs/:id/pause error:', err);
-    res.status(500).json({ error: 'internal server error' });
-  }
-});
-
-// Resume a paused job
-router.post('/:id/resume', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query('SELECT * FROM jobs WHERE id=$1', [id]);
-    const job = result.rows[0];
-    if (!job) return res.status(404).json({ error: 'job not found' });
-
-    if (job.status !== 'paused')
-      return res.status(400).json({ error: 'job is not paused' });
-
-    // Update DB
-    await pool.query('UPDATE jobs SET status=$1 WHERE id=$2', ['active', id]);
-
-    // Re-schedule the job
-    scheduleJob(job);
-
-    res.json({ ok: true, message: `Job ${id} resumed` });
-  } catch (err) {
-    console.error('POST /api/jobs/:id/resume error:', err);
+    console.error('PUT /api/jobs/:id/status error:', err);
     res.status(500).json({ error: 'internal server error' });
   }
 });

@@ -6,97 +6,148 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const scheduledJobs = new Map();
+const scheduledJobs = new Map(); // cron tasks
+const runningJobs = new Map();   // jobId => Set of currently executing child processes
 const VERBOSE = process.env.VERBOSE_LOGS === 'true';
 
-// Helper log functions
+// Logging helpers
 const log = (...args) => { if (VERBOSE) console.log(...args); };
 const info = (...args) => console.log(...args);
 const warn = (...args) => console.warn(...args);
 const error = (...args) => console.error(...args);
 
-export async function scheduleJob(job, runNow = false) {
-  const runJob = async () => {
-    const { id, command, name } = job;
-    let runId;
-    const startTimestamp = new Date().toISOString();
-    info(` [${startTimestamp}] Starting job #${id}: "${name}"`);
-    log(`   ├─ Command: ${command}`);
+/**
+ * Run a job immediately and log to job_runs
+ */
+async function runJobNow(job) {
+  // Double-check status from DB before executing
+  const dbRes = await pool.query('SELECT status FROM jobs WHERE id=$1', [job.id]);
+  const currentStatus = dbRes.rows[0]?.status;
+  if (currentStatus === 'paused') {
+    info(`⏸️ Job #${job.id} "${job.name}" is paused; skipping execution`);
+    return;
+  }
 
-    try {
-      // Record job start
-      const start = await pool.query(
-        'INSERT INTO job_runs (job_id, status, started_at) VALUES ($1, $2, NOW()) RETURNING id',
-                                     [id, 'running']
-      );
-      runId = start.rows[0].id;
-      log(`   ├─ Logged new job run ID: ${runId}`);
+  const { id, command, name } = job;
+  let runId;
+  const startTimestamp = new Date().toISOString();
+  info(`⚡ [${startTimestamp}] Starting job #${id}: "${name}"`);
+  log(`   ├─ Command: ${command}`);
 
-      const startTime = Date.now();
+  try {
+    const start = await pool.query(
+      'INSERT INTO job_runs (job_id, status, started_at) VALUES ($1, $2, NOW()) RETURNING id',
+                                   [id, 'running']
+    );
+    runId = start.rows[0].id;
+    log(`   ├─ Logged new job run ID: ${runId}`);
 
-      await new Promise((resolve, reject) => {
-        exec(command, { timeout: 60000 }, async (err, stdout, stderr) => {
-          const output = (stdout || '') + (stderr || '');
-          const status = err ? 'error' : 'success';
-          const finished_at = new Date();
-          const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    const startTime = Date.now();
 
-          try {
-            await pool.query(
-              'UPDATE job_runs SET status=$1, output=$2, finished_at=$3 WHERE id=$4',
-              [status, output.trim() || '(no output)', finished_at, runId]
-            );
-
-            info(`✅ [${new Date().toISOString()}] Job #${id} "${name}" completed with status: ${status.toUpperCase()}`);
-            log(`   ├─ Duration: ${duration}s`);
-            log(`   ├─ Finished at: ${finished_at.toISOString()}`);
-            log(`   └─ Output: ${output.trim() || '(no output)'}`);
-          } catch (dbErr) {
-            error(`   ❌ Failed to update job run #${runId}:`, dbErr.message);
-          }
-
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-    } catch (err) {
-      error(`❌ [${new Date().toISOString()}] Job "${name}" (id=${id}) failed: ${err.message}`);
-      if (runId) {
-        await pool.query(
-          'UPDATE job_runs SET status=$1, output=$2, finished_at=NOW() WHERE id=$3',
-                         ['error', err.message, runId]
-        );
-        log(`   └─ Recorded error in job_runs table for run ID ${runId}`);
+    const child = exec(command, { timeout: 60000 }, async (err, stdout, stderr) => {
+      // Remove child from runningJobs
+      const set = runningJobs.get(id);
+      if (set) {
+        set.delete(child);
+        if (set.size === 0) runningJobs.delete(id);
       }
+
+      const output = (stdout || '') + (stderr || '');
+      const status = err ? 'error' : 'success';
+      const finished_at = new Date();
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      try {
+        await pool.query(
+          'UPDATE job_runs SET status=$1, output=$2, finished_at=$3 WHERE id=$4',
+          [status, output.trim() || '(no output)', finished_at, runId]
+        );
+
+        info(`✅ [${new Date().toISOString()}] Job #${id} "${name}" completed: ${status.toUpperCase()}`);
+        log(`   ├─ Duration: ${duration}s`);
+        log(`   ├─ Finished at: ${finished_at.toISOString()}`);
+        log(`   └─ Output: ${output.trim() || '(no output)'}`);
+      } catch (dbErr) {
+        error(`❌ Failed to update job run #${runId}: ${dbErr.message}`);
+      }
+    });
+
+    // Track multiple concurrent executions
+    if (!runningJobs.has(id)) runningJobs.set(id, new Set());
+    runningJobs.get(id).add(child);
+
+  } catch (err) {
+    const set = runningJobs.get(id);
+    if (set && runId) set.delete(runId);
+    error(`❌ [${new Date().toISOString()}] Job "${name}" (id=${id}) failed: ${err.message}`);
+    if (runId) {
+      await pool.query(
+        'UPDATE job_runs SET status=$1, output=$2, finished_at=NOW() WHERE id=$3',
+                       ['error', err.message, runId]
+      );
+      log(`   └─ Recorded error in job_runs table for run ID ${runId}`);
     }
-  };
-
-  if (runNow) {
-    info(`⚡ Running job #${job.id} "${job.name}" immediately on manual trigger`);
-    return runJob();
   }
+}
 
-  // Normal scheduled job
-  if (cron.validate(job.schedule)) {
-    const task = cron.schedule(job.schedule, runJob);
-    scheduledJobs.set(job.id, task);
-    info(`⏰ Scheduled job #${job.id}: "${job.name}" (${job.schedule})`);
-  } else {
+/**
+ * Schedule a job normally
+ */
+export async function scheduleJob(job, runNow = false) {
+  if (runNow) return runJobNow(job);
+
+  if (!cron.validate(job.schedule)) {
     warn(`⚠️ Invalid cron expression for job #${job.id}: ${job.schedule}`);
+    return;
   }
+
+  if (scheduledJobs.has(job.id)) {
+    info(`ℹ️ Job #${job.id} "${job.name}" is already scheduled`);
+    return;
+  }
+
+  const task = cron.schedule(job.schedule, async () => {
+    // Always fetch latest job status before running
+    const result = await pool.query('SELECT * FROM jobs WHERE id=$1', [job.id]);
+    const freshJob = result.rows[0];
+    if (!freshJob) return; // job deleted
+    if (freshJob.status === 'paused') {
+      info(`⏸️ Skipping paused job #${job.id}: "${job.name}"`);
+      return;
+    }
+    await runJobNow(freshJob);
+  });
+
+  scheduledJobs.set(job.id, task);
+  info(`⏰ Scheduled job #${job.id}: "${job.name}" (${job.schedule})`);
 }
 
+/**
+ * Cancel a scheduled job and kill all currently running processes
+ */
 export function cancelJob(id) {
-  const job = scheduledJobs.get(id);
-  if (job) {
-    job.stop();
+  const task = scheduledJobs.get(id);
+  if (task) {
+    task.stop();
     scheduledJobs.delete(id);
-    info(`🛑 Canceled job #${id} and removed it from the schedule`);
+    info(`🛑 Canceled scheduled job #${id}`);
   } else {
-    warn(`⚠️ Tried to cancel non-existent job #${id}`);
+    info(`ℹ️ Job #${id} is not currently scheduled; nothing to cancel`);
+  }
+
+  const set = runningJobs.get(id);
+  if (set) {
+    for (const child of set) {
+      child.kill('SIGTERM'); // terminate the process
+    }
+    runningJobs.delete(id);
+    info(`🛑 Killed all running processes for job #${id}`);
   }
 }
 
+/**
+ * Initialize scheduler on server start
+ */
 export async function initScheduler() {
   info('🔄 Initializing scheduler and loading jobs from database...');
   const result = await pool.query('SELECT * FROM jobs');
@@ -105,30 +156,25 @@ export async function initScheduler() {
 
   for (const job of result.rows) {
     if (job.status === 'paused') {
-      log(`⏸️  Skipping paused job: "${job.name}" (id=${job.id})`);
+      log(`⏸️ Skipping paused job: "${job.name}" (id=${job.id})`);
       skipped++;
       continue;
     }
-
     await scheduleJob(job);
     loaded++;
   }
 
-  info(`✅ Scheduler initialization complete.`);
-  info(`   ├─ Loaded ${loaded} active jobs`);
-  info(`   └─ Skipped ${skipped} paused jobs`);
+  info(`✅ Scheduler initialization complete. Loaded ${loaded} active jobs, skipped ${skipped} paused jobs`);
 }
 
 /**
  * Cleanup old job runs (older than 30 days)
  */
 export async function cleanupOldRuns() {
-  info(`🧹 [${new Date().toISOString()}] Starting cleanup of old job runs...`);
+  info(`🧹 [${new Date().toISOString()}] Cleaning old job runs...`);
   try {
     const before = VERBOSE ? await pool.query('SELECT COUNT(*) FROM job_runs') : null;
-    const res = await pool.query(
-      "DELETE FROM job_runs WHERE finished_at < NOW() - INTERVAL '30 days'"
-    );
+    const res = await pool.query("DELETE FROM job_runs WHERE finished_at < NOW() - INTERVAL '30 days'");
     const after = VERBOSE ? await pool.query('SELECT COUNT(*) FROM job_runs') : null;
 
     if (VERBOSE && before && after) {
@@ -147,3 +193,5 @@ export async function cleanupOldRuns() {
 
 // Schedule cleanup once per day at midnight
 cron.schedule('0 0 * * *', cleanupOldRuns);
+
+export { scheduledJobs, runningJobs };
