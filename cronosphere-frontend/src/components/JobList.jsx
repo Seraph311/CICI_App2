@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import api from "../api";
 import JobItem from "./JobItem";
+import JobRuns from "./JobRuns";
+import AddJob from "./AddJob";
 
 export default function JobList() {
   const [jobs, setJobs] = useState([]);
-  const [name, setName] = useState("");
-  const [command, setCommand] = useState("");
-  const [schedule, setSchedule] = useState("");
+  const [showLogs, setShowLogs] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState(null);
 
   const fetchJobs = async () => {
     try {
@@ -17,16 +18,9 @@ export default function JobList() {
     }
   };
 
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await api.post("/jobs", { name, command, schedule });
-      setJobs([res.data, ...jobs]); // prepend new job
-      setName(""); setCommand(""); setSchedule("");
-    } catch (err) {
-      console.error("Failed to add job:", err);
-      alert(err.response?.data?.error || "Failed to add job");
-    }
+  const handleJobAdded = (newJob) => {
+    // Add newly created job without refreshing whole list
+    setJobs(prev => [...prev, newJob]);
   };
 
   const handleRun = async (id) => {
@@ -35,7 +29,6 @@ export default function JobList() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this job?")) return;
     await api.delete(`/jobs/${id}`);
     fetchJobs();
   };
@@ -46,38 +39,23 @@ export default function JobList() {
     fetchJobs();
   };
 
+  const handleViewLogs = (id) => {
+    setSelectedJobId(id);
+    setShowLogs(true);
+  };
+
   useEffect(() => {
     fetchJobs();
   }, []);
 
   return (
     <div className="job-list">
+
     <h2>🕒 Scheduled Jobs</h2>
 
-    {/* Add Job Form */}
-    <form onSubmit={handleAdd} className="add-job-form">
-    <input
-    value={name}
-    onChange={(e) => setName(e.target.value)}
-    placeholder="Job name"
-    required
-    />
-    <input
-    value={command}
-    onChange={(e) => setCommand(e.target.value)}
-    placeholder="Command"
-    required
-    />
-    <input
-    value={schedule}
-    onChange={(e) => setSchedule(e.target.value)}
-    placeholder="Cron schedule"
-    required
-    />
-    <button type="submit">➕ Add Job</button>
-    </form>
+    <AddJob onJobAdded={handleJobAdded} />
 
-    {/* Job List */}
+    {/* Render Jobs */}
     {jobs.map((job) => (
       <JobItem
       key={job.id}
@@ -85,8 +63,14 @@ export default function JobList() {
       onRun={handleRun}
       onDelete={handleDelete}
       onToggle={handleToggle}
+      onViewLogs={handleViewLogs}
       />
     ))}
+
+    {/* Logs Modal */}
+    {showLogs && (
+      <JobRuns jobId={selectedJobId} onClose={() => setShowLogs(false)} />
+    )}
     </div>
   );
 }
