@@ -53,3 +53,15 @@ header {
   border-bottom: 2px solid #444;
   margin-bottom: 1.5rem;
 }
+
+.dashboard {
+  display: flex;
+  justify-content: center;
+  margin-top: 40px;
+  gap: 40px;
+}
+
+.dashboard-column {
+  width: 500px;
+  max-width: 100%;
+}

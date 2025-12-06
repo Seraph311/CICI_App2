@@ -1,4 +1,3 @@
-// src/App.jsx
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import api from './api';
@@ -6,6 +5,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import JobList from './components/JobList';
 import AddJob from './components/AddJob';
+import './App.css';
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -58,11 +58,14 @@ export default function App() {
       <Routes>
       <Route path="/" element={
         <ProtectedRoute>
-
+        <div className="dashboard">
+        <div className="dashboard-column">
         <JobList />
-
+        </div>
+        </div>
         </ProtectedRoute>
       } />
+
 
       <Route path="/login" element={<Login onLogin={handleLogin} />} />
       <Route path="/register" element={<Register onRegister={handleLogin} />} />

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import api from '../api';
 import { useNavigate } from 'react-router-dom';
+import "./Auth.css";
 
 export default function Register({ onRegister }) {
   const [username, setUsername] = useState('');
@@ -20,13 +21,34 @@ export default function Register({ onRegister }) {
   };
 
   return (
-    <div className="auth-form">
-      <h2>Register</h2>
-      <form onSubmit={submit}>
-        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="username" required />
-        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="password" required />
-        <button type="submit">Register</button>
-      </form>
+    <div className="auth-container">
+    <h2 className="auth-title">Register</h2>
+
+    <form className="auth-form" onSubmit={submit}>
+    <input
+    className="auth-input"
+    type="text"
+    placeholder="Username"
+    value={username}
+    onChange={e => setUsername(e.target.value)}
+    required
+    />
+
+    <input
+    className="auth-input"
+    type="password"
+    placeholder="Password"
+    value={password}
+    onChange={e => setPassword(e.target.value)}
+    required
+    />
+
+    <button className="auth-button" type="submit">Create Account</button>
+    </form>
+
+    <div className="auth-link">
+    <a href="/login">Already have an account?</a>
+    </div>
     </div>
   );
 }

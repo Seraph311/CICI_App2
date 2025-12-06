@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import api from '../api';
 import { useNavigate } from 'react-router-dom';
+import "./Auth.css";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -20,13 +21,34 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="auth-form">
-      <h2>Login</h2>
-      <form onSubmit={submit}>
-        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="username" required />
-        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="password" required />
-        <button type="submit">Login</button>
-      </form>
+    <div className="auth-container">
+    <h2 className="auth-title">Login</h2>
+
+    <form className="auth-form" onSubmit={submit}>
+    <input
+    className="auth-input"
+    type="text"
+    placeholder="Username"
+    value={username}
+    onChange={e => setUsername(e.target.value)}
+    required
+    />
+
+    <input
+    className="auth-input"
+    type="password"
+    placeholder="Password"
+    value={password}
+    onChange={e => setPassword(e.target.value)}
+    required
+    />
+
+    <button className="auth-button" type="submit">Sign In</button>
+    </form>
+
+    <div className="auth-link">
+    <a href="/register">Create an account</a>
+    </div>
     </div>
   );
 }
