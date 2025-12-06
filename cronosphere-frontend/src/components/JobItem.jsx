@@ -6,11 +6,14 @@ export default function JobItem({ job, onRun, onDelete, onToggle, onViewLogs }) 
   const [showConfirm, setShowConfirm] = useState(false);
 
   const statusColor = {
+    queued: "#3498db",
+    running: "#f1c40f",
     success: "#2ecc71",
     error: "#e74c3c",
-    running: "#f1c40f",
     paused: "#7f8c8d",
+    active: "#2ecc71"
   }[job.status] || "#7f8c8d";
+
 
   const handleDelete = () => {
     setShowConfirm(true);
