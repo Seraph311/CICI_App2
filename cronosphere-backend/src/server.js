@@ -1,23 +1,27 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import cors from 'cors'; // <-- import cors
+import cors from 'cors';
 import jobsRouter from './routes/jobs.js';
+import authRouter from './routes/auth.js';
 import { initScheduler } from './scheduler.js';
 import { pool } from './db.js';
 
 dotenv.config();
 
 const app = express();
-app.use(cors()); // <-- allow all origins (dev)
+app.use(cors());
 app.use(express.json());
 
+// Auth routes
+app.use('/api/auth', authRouter);
+
+// Protected job routes mounted at /api/jobs
 app.use('/api/jobs', jobsRouter);
 
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
   try {
-    // 🧠 Try to connect to PostgreSQL
     const client = await pool.connect();
     console.log('✅ Connected to PostgreSQL database!');
     client.release();
