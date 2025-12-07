@@ -1,0 +1,26 @@
+.joblist-wrapper {
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.addjob-center-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 25px 0;
+}
+
+.addjob-center-btn {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  font-weight: 600;
+  color: #4c8bf5;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.addjob-center-btn:hover {
+  transform: scale(1.1);
+  color: #376fd4;
+}

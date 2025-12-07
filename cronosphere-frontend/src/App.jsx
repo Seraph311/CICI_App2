@@ -4,7 +4,7 @@ import api from './api';
 import Login from './components/Login';
 import Register from './components/Register';
 import JobList from './components/JobList';
-import AddJob from './components/AddJob';
+import AddJobModal from "./components/AddJobModal";
 import './App.css';
 
 function ProtectedRoute({ children }) {
@@ -14,6 +14,10 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [reloadCounter, setReloadCounter] = useState(0); // used to signal JobList to refresh
+
   const [user, setUser] = useState(null);
 
   useEffect(() => {
@@ -32,6 +36,13 @@ export default function App() {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       setUser(null);
+    };
+
+    // Called when AddJobModal successfully creates a job
+    const handleJobAdded = (job) => {
+      // close modal and bump the reload counter so JobList reloads
+      setShowAddModal(false);
+      setReloadCounter((c) => c + 1);
     };
 
     return (
@@ -59,13 +70,12 @@ export default function App() {
       <Route path="/" element={
         <ProtectedRoute>
         <div className="dashboard">
-        <div className="dashboard-column">
-        <JobList />
-        </div>
+        {/* JobList receives reloadCounter so it refreshes when changed */}
+        <JobList onAddClick={() => setShowAddModal(true)} reloadCounter={reloadCounter} />
+        <AddJobModal visible={showAddModal} onClose={() => setShowAddModal(false)} onJobAdded={handleJobAdded} />
         </div>
         </ProtectedRoute>
       } />
-
 
       <Route path="/login" element={<Login onLogin={handleLogin} />} />
       <Route path="/register" element={<Register onRegister={handleLogin} />} />
