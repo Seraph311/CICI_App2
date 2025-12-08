@@ -12,13 +12,24 @@ router.use(requireAuth);
 
 // Forbidden commands
 const FORBIDDEN_PATTERNS = [
-  /(^|\s)sudo(\s|$)/i,
-  /rm\s+-rf/i,
-/:\s*\(\)\s*{\s*:\s*\|\s*:\s*;\s*}/,
-/dd\s+if=/i,
-/mkfs\./i,
-/:(){:|:&};:/
+  /\bsudo\b/i,
+  /\brm\s+-[^\s]*f[^\s]*\b/i,   // rm -rf, rm -rF, rm -rfv
+  /\bshutdown\b/i,
+  /\breboot\b/i,
+  /\bhalt\b/i,
+  /\bmkfs\./i,
+  /\bfsck\b/i,
+  /\bdd\s+if=/i,
+  /\bfork\b/i,
+  /:(){:|:&};:/,               // fork bomb
+  /\bchown\b.*\broot\b/i,
+  /\bchmod\s+0{3,4}\b/i,
+  /\bmount\b/i,
+  /\bumount\b/i,
+  /\bservice\b/i,
+  /\bsystemctl\b/i,
 ];
+
 
 function isForbidden(command) {
   if (!command) return false;
