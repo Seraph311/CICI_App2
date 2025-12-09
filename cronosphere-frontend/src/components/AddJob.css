@@ -34,6 +34,8 @@
   border: 1px solid #333;
   padding: 10px;
   border-radius: 5px;
+  max-height: 150px;
+  overflow-y: auto;
 }
 
 .command-preview pre {
@@ -43,6 +45,7 @@
   border-radius: 5px;
   color: #00ff00;
 }
+
 
 /* Modal */
 .cmd-modal {
