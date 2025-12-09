@@ -6,8 +6,13 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'please_change_me';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'; // adjust as needed
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
+
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 // Register
 router.post('/register', async (req, res) => {
