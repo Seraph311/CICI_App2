@@ -9,7 +9,16 @@ import { pool } from './db.js';
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+// CORS FIX
+app.use(
+  cors({
+    origin: "*", // you can restrict later
+    methods: "GET,POST,PUT,DELETE,OPTIONS",
+    allowedHeaders: "Content-Type, Authorization, x-api-key"
+  })
+);
+
 app.use(express.json());
 
 // Auth routes
