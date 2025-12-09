@@ -3,17 +3,27 @@ import AddJob from "./AddJob";
 import "./AddJobModal.css";
 
 export default function AddJobModal({ visible, onClose, onJobAdded }) {
-  if (!visible) return null;
+  const [closing, setClosing] = useState(false);
+
+  if (!visible && !closing) return null;
+
+  const handleClose = () => {
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, 250); // matches bounceOut duration
+  };
 
   const handleAdded = (job) => {
     if (onJobAdded) onJobAdded(job);
-    onClose();
+    handleClose();
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
     <div
-    className="modal-content bounce-in"
+    className={`modal-content ${closing ? "bounce-out" : "bounce-in"}`}
     onClick={(e) => e.stopPropagation()}
     >
     <AddJob onJobAdded={handleAdded} />

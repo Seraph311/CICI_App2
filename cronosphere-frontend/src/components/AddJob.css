@@ -172,3 +172,51 @@ input[type="time"] {
   border: 1px solid #444;
 }
 
+/* Mode switch container */
+.mode-switch {
+  display: flex;
+  gap: 20px;
+  margin: 12px 0;
+}
+
+/* Hide original radio buttons */
+.mode-switch input[type="radio"] {
+  display: none;
+}
+
+/* Replace with dark pill buttons */
+.mode-switch label {
+  padding: 6px 14px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: pointer;
+  color: white;
+  transition: 0.15s ease;
+  user-select: none;
+}
+
+/* Hover visual */
+.mode-switch label:hover {
+  background: #222;
+}
+
+/* ACTIVE (selected) style */
+.mode-switch input[type="radio"]:checked + span {
+  background: #444;
+  border-color: #666;
+  font-weight: bold;
+}
+
+.advanced-input textarea {
+  background: black;
+  color: #00ff00;
+  border: 1px solid #333;
+  padding: 10px;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+
