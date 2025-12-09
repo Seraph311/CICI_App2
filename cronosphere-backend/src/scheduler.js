@@ -1,8 +1,8 @@
-// src/scheduler.js
 import cron from 'node-cron';
 import { pool } from './db.js';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { exec, spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -10,13 +10,53 @@ dotenv.config();
 const scheduledJobs = new Map(); // cron tasks
 const runningJobs = new Map();   // jobId => Set of currently executing child processes
 const VERBOSE = process.env.VERBOSE_LOGS === 'true';
-const execAsync = promisify(exec); // For async/await with exec
 
 // Logging helpers
 const log = (...args) => { if (VERBOSE) console.log(...args); };
 const info = (...args) => console.log(...args);
 const warn = (...args) => console.warn(...args);
 const error = (...args) => console.error(...args);
+
+// ensure /tmp/scripts exists
+const SCRIPTS_DIR = '/tmp/scripts';
+try {
+  if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
+} catch (e) {
+  // best effort
+  log('Could not create scripts dir:', e.message);
+}
+
+/**
+ * Helper: write script content to disk and return filepath
+ */
+async function writeScriptToFile(scriptId, content, type) {
+  const ext = (type === 'node') ? 'js' : 'sh';
+  const filename = path.join(SCRIPTS_DIR, `script_${scriptId}.${ext}`);
+  await fs.promises.writeFile(filename, content, { mode: 0o700 });
+  return filename;
+}
+
+/**
+ * Create user-specific temporary directory
+ */
+async function createUserTempDir(owner) {
+  const userTempDir = `/tmp/user_${owner}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  await fs.promises.mkdir(userTempDir, { recursive: true });
+  return userTempDir;
+}
+
+/**
+ * Cleanup user temp directory
+ */
+async function cleanupUserTempDir(userTempDir) {
+  try {
+    await fs.promises.rm(userTempDir, { recursive: true, force: true });
+    return true;
+  } catch (err) {
+    warn(`⚠️ Failed to cleanup temp directory ${userTempDir}: ${err.message}`);
+    return false;
+  }
+}
 
 /**
  * Run a job immediately and log to job_runs
@@ -30,18 +70,19 @@ async function runJobNow(job) {
     return;
   }
 
-  const { id, command, name, owner } = job;
+  const { id, command, name, script_id, owner } = job;
   let runId;
+  let userTempDir = null;
   const startTimestamp = new Date().toISOString();
   info(`⚡ [${startTimestamp}] Starting job #${id}: "${name}"`);
   log(`   ├─ Command: ${command}`);
-
-  // Create user-specific temporary directory
-  const userTempDir = `/tmp/user_${owner}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  log(`   ├─ Script ID: ${script_id || '(none)'}`);
+  log(`   ├─ Owner: ${owner}`);
 
   try {
-    // Create the directory
-    await execAsync(`mkdir -p ${userTempDir}`);
+    // Create user-specific temporary directory
+    userTempDir = await createUserTempDir(owner);
+    log(`   ├─ User temp directory: ${userTempDir}`);
 
     const start = await pool.query(
       'INSERT INTO job_runs (job_id, status, started_at) VALUES ($1, $2, NOW()) RETURNING id',
@@ -49,64 +90,132 @@ async function runJobNow(job) {
     );
     runId = start.rows[0].id;
     log(`   ├─ Logged new job run ID: ${runId}`);
-    log(`   ├─ User temp directory: ${userTempDir}`);
 
     const startTime = Date.now();
 
-    // Set environment variables for the job
-    const env = {
-      ...process.env,
-      USER_TEMP_DIR: userTempDir,
-      JOB_ID: id.toString(),
-      USER_ID: owner.toString(),
-      JOB_NAME: name
-    };
+    // Determine execution: script or command
+    let child;
+    if (script_id) {
+      // Fetch script content and type
+      const sres = await pool.query('SELECT content, type FROM scripts WHERE id=$1', [script_id]);
+      const script = sres.rows[0];
+      if (!script) {
+        // Cleanup temp directory before returning
+        if (userTempDir) await cleanupUserTempDir(userTempDir);
 
-    const child = exec(command, {
-      timeout: 60000,
-      env: env,
-      cwd: userTempDir  // Run in user's temp directory
-    }, async (err, stdout, stderr) => {
-      // Remove child from runningJobs
-      const set = runningJobs.get(id);
-      if (set) {
-        set.delete(child);
-        if (set.size === 0) runningJobs.delete(id);
+        await pool.query('UPDATE job_runs SET status=$1, output=$2, finished_at=NOW() WHERE id=$3',
+                         ['error', 'script not found', runId]);
+        error(`❌ Script ${script_id} not found for job ${id}`);
+        return;
       }
 
-      const output = (stdout || '') + (stderr || '');
-      const status = err ? 'error' : 'success';
-      const finished_at = new Date();
-      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      const filepath = await writeScriptToFile(script_id, script.content, script.type);
 
-      try {
-        await pool.query(
-          'UPDATE job_runs SET status=$1, output=$2, finished_at=$3 WHERE id=$4',
-          [status, output.trim() || '(no output)', finished_at, runId]
-        );
+      // Set environment variables for the job
+      const env = {
+        ...process.env,
+        USER_TEMP_DIR: userTempDir,
+        JOB_ID: id.toString(),
+        USER_ID: owner.toString(),
+        JOB_NAME: name,
+        SCRIPT_ID: script_id.toString()
+      };
 
-        info(`✅ [${new Date().toISOString()}] Job #${id} "${name}" completed: ${status.toUpperCase()}`);
-        log(`   ├─ Duration: ${duration}s`);
-        log(`   ├─ Finished at: ${finished_at.toISOString()}`);
-        log(`   └─ Output: ${output.trim() || '(no output)'}`);
-
-        // Cleanup user's temp directory (after job completion)
-        try {
-          await execAsync(`rm -rf ${userTempDir}`);
-          log(`   ├─ Cleaned up temp directory: ${userTempDir}`);
-        } catch (cleanupErr) {
-          warn(`⚠️ Failed to cleanup temp directory ${userTempDir}: ${cleanupErr.message}`);
-        }
-      } catch (dbErr) {
-        error(`❌ Failed to update job run #${runId}: ${dbErr.message}`);
-        // Still try to cleanup temp directory
-        try {
-          await execAsync(`rm -rf ${userTempDir}`);
-        } catch (cleanupErr) {
-          // Ignore cleanup errors if DB update already failed
-        }
+      // Spawn the appropriate interpreter
+      if (script.type === 'node') {
+        child = spawn(process.execPath || 'node', [filepath], {
+          timeout: 60000,
+          env: env,
+          cwd: userTempDir  // Run in user's temp directory
+        });
+      } else { // bash
+        child = spawn('bash', [filepath], {
+          timeout: 60000,
+          env: env,
+          cwd: userTempDir  // Run in user's temp directory
+        });
       }
-    });
+
+      // capture output
+      let out = '';
+      child.stdout.on('data', chunk => out += chunk.toString());
+      child.stderr.on('data', chunk => out += chunk.toString());
+
+      child.on('close', async (code, signal) => {
+        const status = code === 0 ? 'success' : 'error';
+        const finished_at = new Date();
+        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+        try {
+          await pool.query(
+            'UPDATE job_runs SET status=$1, output=$2, finished_at=$3 WHERE id=$4',
+            [status, (out || '(no output)').trim(), finished_at, runId]
+          );
+          info(`✅ [${new Date().toISOString()}] Job #${id} "${name}" completed: ${status.toUpperCase()}`);
+          log(`   ├─ Duration: ${duration}s`);
+          log(`   └─ Output: ${out.trim() || '(no output)'}`);
+        } catch (dbErr) {
+          error(`❌ Failed to update job run #${runId}: ${dbErr.message}`);
+        }
+
+        // Cleanup user's temp directory
+        if (userTempDir) {
+          await cleanupUserTempDir(userTempDir);
+        }
+
+        // cleanup runningJobs set
+        const set = runningJobs.get(id);
+        if (set) {
+          set.delete(child);
+          if (set.size === 0) runningJobs.delete(id);
+        }
+      });
+
+    } else {
+      // Execute plain command with user temp directory
+      const env = {
+        ...process.env,
+        USER_TEMP_DIR: userTempDir,
+        JOB_ID: id.toString(),
+        USER_ID: owner.toString(),
+        JOB_NAME: name
+      };
+
+      child = exec(command, {
+        timeout: 60000,
+        env: env,
+        cwd: userTempDir  // Run in user's temp directory
+      }, async (err, stdout, stderr) => {
+        const set = runningJobs.get(id);
+        if (set) {
+          set.delete(child);
+          if (set.size === 0) runningJobs.delete(id);
+        }
+
+        const output = (stdout || '') + (stderr || '');
+        const status = err ? 'error' : 'success';
+        const finished_at = new Date();
+        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+        try {
+          await pool.query(
+            'UPDATE job_runs SET status=$1, output=$2, finished_at=$3 WHERE id=$4',
+            [status, output.trim() || '(no output)', finished_at, runId]
+          );
+
+          info(`✅ [${new Date().toISOString()}] Job #${id} "${name}" completed: ${status.toUpperCase()}`);
+          log(`   ├─ Duration: ${duration}s`);
+          log(`   └─ Output: ${output.trim() || '(no output)'}`);
+        } catch (dbErr) {
+          error(`❌ Failed to update job run #${runId}: ${dbErr.message}`);
+        }
+
+        // Cleanup user's temp directory
+        if (userTempDir) {
+          await cleanupUserTempDir(userTempDir);
+        }
+      });
+    }
 
     // Track multiple concurrent executions
     if (!runningJobs.has(id)) runningJobs.set(id, new Set());
@@ -114,10 +223,8 @@ async function runJobNow(job) {
 
   } catch (err) {
     // Cleanup temp directory if job failed to start
-    try {
-      await execAsync(`rm -rf ${userTempDir}`);
-    } catch (cleanupErr) {
-      // Ignore cleanup errors
+    if (userTempDir) {
+      await cleanupUserTempDir(userTempDir);
     }
 
     const set = runningJobs.get(id);
@@ -181,7 +288,7 @@ export function cancelJob(id) {
   const set = runningJobs.get(id);
   if (set) {
     for (const child of set) {
-      child.kill('SIGTERM'); // terminate the process
+      try { child.kill('SIGTERM'); } catch(e) {}
     }
     runningJobs.delete(id);
     info(`🛑 Killed all running processes for job #${id}`);

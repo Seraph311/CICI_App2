@@ -21,6 +21,10 @@ app.use(
 
 app.use(express.json());
 
+import scriptsRouter from './routes/scripts.js';
+app.use('/api/scripts', scriptsRouter);
+
+
 // Auth routes
 app.use('/api/auth', authRouter);
 

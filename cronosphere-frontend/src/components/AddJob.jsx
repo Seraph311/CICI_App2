@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import api from "../api";
 import "./AddJob.css";
 
@@ -15,6 +15,31 @@ export default function AddJob({ onJobAdded }) {
     const [manualCron, setManualCron] = useState("");
 
     const [showCommandModal, setShowCommandModal] = useState(false);
+    const [showScriptModal, setShowScriptModal] = useState(false);
+    const [scripts, setScripts] = useState([]);
+    const [selectedScriptId, setSelectedScriptId] = useState(null);
+    const [selectedScriptName, setSelectedScriptName] = useState("");
+    const [loadingScripts, setLoadingScripts] = useState(false);
+
+    // Load scripts when script modal opens
+    useEffect(() => {
+        if (showScriptModal) {
+            loadScripts();
+        }
+    }, [showScriptModal]);
+
+    const loadScripts = async () => {
+        setLoadingScripts(true);
+        try {
+            const res = await api.get("/scripts");
+            setScripts(res.data || []);
+        } catch (err) {
+            console.error("Failed to load scripts:", err);
+            alert(err.response?.data?.error || "Failed to load scripts");
+        } finally {
+            setLoadingScripts(false);
+        }
+    };
 
     // --- CRON DESCRIPTION PARSER ---
     const describeCron = (cron) => {
@@ -68,14 +93,24 @@ export default function AddJob({ onJobAdded }) {
         const finalSchedule = advanced ? manualCron : buildCron();
 
         try {
-            const res = await api.post("/jobs", {
+            const payload = {
                 name,
-                command,
                 schedule: finalSchedule,
-            });
+            };
+
+            if (selectedScriptId) {
+                payload.script_id = selectedScriptId;
+                payload.command = null; // Clear command if using script
+            } else {
+                payload.command = command;
+                payload.script_id = null; // Clear script_id if using command
+            }
+
+            const res = await api.post("/jobs", payload);
 
             onJobAdded(res.data);
 
+            // Reset form
             setName("");
             setCommand("");
             setMonth("");
@@ -83,11 +118,26 @@ export default function AddJob({ onJobAdded }) {
             setWeekday("");
             setTime("");
             setManualCron("");
+            setSelectedScriptId(null);
+            setSelectedScriptName("");
 
         } catch (err) {
             console.error("Failed to add job:", err);
             alert(err.response?.data?.error || "Failed to add job");
         }
+    };
+
+    const handleScriptSelect = (script) => {
+        setSelectedScriptId(script.id);
+        setSelectedScriptName(script.name);
+        setShowScriptModal(false);
+        // Clear command when selecting a script
+        setCommand("");
+    };
+
+    const clearScriptSelection = () => {
+        setSelectedScriptId(null);
+        setSelectedScriptName("");
     };
 
     return (
@@ -101,6 +151,7 @@ export default function AddJob({ onJobAdded }) {
         required
         />
 
+        <div className="action-buttons">
         <button
         type="button"
         className="edit-command-btn"
@@ -109,9 +160,37 @@ export default function AddJob({ onJobAdded }) {
         ✏️ Edit Command
         </button>
 
+        <button
+        type="button"
+        className="edit-command-btn"
+        onClick={() => setShowScriptModal(true)}
+        >
+        📜 {selectedScriptId ? "Change Script" : "Choose Saved Script"}
+        </button>
+        </div>
+
+        {/* Command/Script Preview */}
         <div className="command-preview">
-        <strong>Command:</strong>
-        <pre>{command || "(empty)"}</pre>
+        {selectedScriptId ? (
+            <>
+            <strong>Selected Script:</strong>
+            <div className="script-selection">
+            <span>{selectedScriptName}</span>
+            <button
+            type="button"
+            className="clear-script-btn"
+            onClick={clearScriptSelection}
+            >
+            ✕
+            </button>
+            </div>
+            </>
+        ) : (
+            <>
+            <strong>Command:</strong>
+            <pre>{command || "(empty)"}</pre>
+            </>
+        )}
         </div>
 
         {/* MODE SWITCH */}
@@ -221,19 +300,67 @@ export default function AddJob({ onJobAdded }) {
         <button type="submit">➕ Add Job</button>
         </form>
 
+        {/* Command Edit Modal */}
         {showCommandModal && (
             <div className="cmd-modal">
             <div className="cmd-content">
             <h3>✏️ Edit Command</h3>
+            <p><em>Note: If you enter a command, any selected script will be cleared.</em></p>
 
             <textarea
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             placeholder="Enter shell command here..."
+            rows={8}
             />
 
             <div className="cmd-actions">
-            <button onClick={() => setShowCommandModal(false)}>Close</button>
+            <button onClick={() => {
+                setShowCommandModal(false);
+                if (command.trim() && selectedScriptId) {
+                    clearScriptSelection();
+                }
+            }}>Close</button>
+            </div>
+            </div>
+            </div>
+        )}
+
+        {/* Script Selection Modal */}
+        {showScriptModal && (
+            <div className="cmd-modal">
+            <div className="cmd-content">
+            <h3>📜 Choose Script</h3>
+            <p><em>Select a saved script to use for this job</em></p>
+
+            {loadingScripts ? (
+                <p>Loading scripts...</p>
+            ) : scripts.length === 0 ? (
+                <div className="no-scripts">
+                <p>No scripts found. <a href="/scripts">Create one first</a></p>
+                </div>
+            ) : (
+                <div className="script-list-modal">
+                {scripts.map((script) => (
+                    <div
+                    key={script.id}
+                    className={`script-item ${selectedScriptId === script.id ? "selected" : ""}`}
+                    onClick={() => handleScriptSelect(script)}
+                    >
+                    <div className="script-item-header">
+                    <strong>{script.name}</strong>
+                    <span className="script-type">{script.type}</span>
+                    </div>
+                    <pre className="script-preview">
+                    {script.content.slice(0, 100)}...
+                    </pre>
+                    </div>
+                ))}
+                </div>
+            )}
+
+            <div className="cmd-actions">
+            <button onClick={() => setShowScriptModal(false)}>Cancel</button>
             </div>
             </div>
             </div>

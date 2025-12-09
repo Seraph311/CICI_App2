@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import JobList from './components/JobList';
 import AddJobModal from "./components/AddJobModal";
+import ScriptManager from "./components/ScriptManager";
 import './App.css';
 
 function ProtectedRoute({ children }) {
@@ -14,14 +15,11 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
-
   const [showAddModal, setShowAddModal] = useState(false);
-  const [reloadCounter, setReloadCounter] = useState(0); // used to signal JobList to refresh
-
+  const [reloadCounter, setReloadCounter] = useState(0);
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // If token exists, try to fetch profile
     const raw = localStorage.getItem('user');
     if (raw) setUser(JSON.parse(raw));
   }, []);
@@ -38,9 +36,7 @@ export default function App() {
       setUser(null);
     };
 
-    // Called when AddJobModal successfully creates a job
     const handleJobAdded = (job) => {
-      // close modal and bump the reload counter so JobList reloads
       setShowAddModal(false);
       setReloadCounter((c) => c + 1);
     };
@@ -54,7 +50,7 @@ export default function App() {
       {user ? (
         <>
         <span style={{ marginRight: 12 }}>👤 {user.username}</span>
-        <button onClick={handleLogout}>Logout</button>
+        <button onClick={handleLogout} style={{ marginLeft: 8 }}>Logout</button>
         </>
       ) : (
         <>
@@ -70,7 +66,6 @@ export default function App() {
       <Route path="/" element={
         <ProtectedRoute>
         <div className="dashboard">
-        {/* JobList receives reloadCounter so it refreshes when changed */}
         <JobList onAddClick={() => setShowAddModal(true)} reloadCounter={reloadCounter} />
         <AddJobModal visible={showAddModal} onClose={() => setShowAddModal(false)} onJobAdded={handleJobAdded} />
         </div>
@@ -79,6 +74,11 @@ export default function App() {
 
       <Route path="/login" element={<Login onLogin={handleLogin} />} />
       <Route path="/register" element={<Register onRegister={handleLogin} />} />
+      <Route path="/scripts" element={
+        <ProtectedRoute>
+        <ScriptManager />
+        </ProtectedRoute>
+      } />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </main>

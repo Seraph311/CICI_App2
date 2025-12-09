@@ -222,4 +222,117 @@ input[type="time"] {
   resize: vertical;
 }
 
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
 
+.action-buttons .edit-command-btn {
+  flex: 1;
+}
+
+.script-selection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #333;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-top: 5px;
+}
+
+.clear-script-btn {
+  background: #c0392b;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.clear-script-btn:hover {
+  background: #e74c3c;
+}
+
+.no-scripts {
+  text-align: center;
+  padding: 20px;
+  background: #222;
+  border-radius: 6px;
+  margin: 10px 0;
+}
+
+.no-scripts a {
+  color: #4c8bf5;
+  text-decoration: none;
+}
+
+.no-scripts a:hover {
+  text-decoration: underline;
+}
+
+.script-list-modal {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 10px 0;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 5px;
+}
+
+.script-item {
+  background: #222;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.script-item:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.script-item.selected {
+  border-color: #4c8bf5;
+  background: #1a3a5f;
+}
+
+.script-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.script-type {
+  background: #555;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.script-preview {
+  background: #111;
+  color: #ccc;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.cmd-content p em {
+  color: #888;
+  font-size: 14px;
+  margin-bottom: 15px;
+  display: block;
+}
