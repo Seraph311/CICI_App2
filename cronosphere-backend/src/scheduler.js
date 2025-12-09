@@ -2,6 +2,7 @@
 import cron from 'node-cron';
 import { pool } from './db.js';
 import { exec } from 'child_process';
+import { promisify } from 'util';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -9,6 +10,7 @@ dotenv.config();
 const scheduledJobs = new Map(); // cron tasks
 const runningJobs = new Map();   // jobId => Set of currently executing child processes
 const VERBOSE = process.env.VERBOSE_LOGS === 'true';
+const execAsync = promisify(exec); // For async/await with exec
 
 // Logging helpers
 const log = (...args) => { if (VERBOSE) console.log(...args); };
@@ -28,23 +30,43 @@ async function runJobNow(job) {
     return;
   }
 
-  const { id, command, name } = job;
+  const { id, command, name, owner } = job;
   let runId;
   const startTimestamp = new Date().toISOString();
   info(`⚡ [${startTimestamp}] Starting job #${id}: "${name}"`);
   log(`   ├─ Command: ${command}`);
 
+  // Create user-specific temporary directory
+  const userTempDir = `/tmp/user_${owner}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   try {
+    // Create the directory
+    await execAsync(`mkdir -p ${userTempDir}`);
+
     const start = await pool.query(
       'INSERT INTO job_runs (job_id, status, started_at) VALUES ($1, $2, NOW()) RETURNING id',
                                    [id, 'running']
     );
     runId = start.rows[0].id;
     log(`   ├─ Logged new job run ID: ${runId}`);
+    log(`   ├─ User temp directory: ${userTempDir}`);
 
     const startTime = Date.now();
 
-    const child = exec(command, { timeout: 60000 }, async (err, stdout, stderr) => {
+    // Set environment variables for the job
+    const env = {
+      ...process.env,
+      USER_TEMP_DIR: userTempDir,
+      JOB_ID: id.toString(),
+      USER_ID: owner.toString(),
+      JOB_NAME: name
+    };
+
+    const child = exec(command, {
+      timeout: 60000,
+      env: env,
+      cwd: userTempDir  // Run in user's temp directory
+    }, async (err, stdout, stderr) => {
       // Remove child from runningJobs
       const set = runningJobs.get(id);
       if (set) {
@@ -67,8 +89,22 @@ async function runJobNow(job) {
         log(`   ├─ Duration: ${duration}s`);
         log(`   ├─ Finished at: ${finished_at.toISOString()}`);
         log(`   └─ Output: ${output.trim() || '(no output)'}`);
+
+        // Cleanup user's temp directory (after job completion)
+        try {
+          await execAsync(`rm -rf ${userTempDir}`);
+          log(`   ├─ Cleaned up temp directory: ${userTempDir}`);
+        } catch (cleanupErr) {
+          warn(`⚠️ Failed to cleanup temp directory ${userTempDir}: ${cleanupErr.message}`);
+        }
       } catch (dbErr) {
         error(`❌ Failed to update job run #${runId}: ${dbErr.message}`);
+        // Still try to cleanup temp directory
+        try {
+          await execAsync(`rm -rf ${userTempDir}`);
+        } catch (cleanupErr) {
+          // Ignore cleanup errors if DB update already failed
+        }
       }
     });
 
@@ -77,6 +113,13 @@ async function runJobNow(job) {
     runningJobs.get(id).add(child);
 
   } catch (err) {
+    // Cleanup temp directory if job failed to start
+    try {
+      await execAsync(`rm -rf ${userTempDir}`);
+    } catch (cleanupErr) {
+      // Ignore cleanup errors
+    }
+
     const set = runningJobs.get(id);
     if (set && runId) set.delete(runId);
     error(`❌ [${new Date().toISOString()}] Job "${name}" (id=${id}) failed: ${err.message}`);
