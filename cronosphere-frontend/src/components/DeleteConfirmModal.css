@@ -8,51 +8,85 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 999;
+  animation: fadeIn .25s ease forwards;
+  z-index: 1002;
 }
 
 .confirm-modal {
   background: #1c1c1c;
-  padding: 20px 25px;
-  border-radius: 10px;
-  width: 380px;
+  padding: 25px;
+  border-radius: 12px;
+  width: 400px;
+  max-width: 90%;
   color: white;
   text-align: center;
-  border: 1px solid #333;
+  border: 2px solid #333;
+  animation: modalBounceIn .35s ease forwards;
+}
+
+.confirm-modal.closing {
+  animation: modalBounceOut .25s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modalBounceIn {
+  0%   { transform: scale(0.7); opacity: 0; }
+  55%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes modalBounceOut {
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.7); opacity: 0; }
 }
 
 .confirm-modal h2 {
-  margin-bottom: 10px;
+  margin-bottom: 15px;
+  color: #fff;
+}
+
+.confirm-modal p {
+  margin: 15px 0;
+  color: #ccc;
 }
 
 .confirm-actions {
   display: flex;
   justify-content: space-between;
-  margin-top: 20px;
+  margin-top: 25px;
+  gap: 15px;
+}
+
+.cancel-btn, .delete-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+  flex: 1;
 }
 
 .cancel-btn {
   background: #444;
   color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
 }
 
 .cancel-btn:hover {
   background: #666;
+  transform: translateY(-1px);
 }
 
 .delete-btn {
   background: #cc0000;
   color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
 }
 
 .delete-btn:hover {
   background: #990000;
+  transform: translateY(-1px);
 }

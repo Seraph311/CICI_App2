@@ -5,6 +5,7 @@ import "./JobRuns.css";
 export default function JobRuns({ jobId, onClose }) {
     const [runs, setRuns] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [closing, setClosing] = useState(false);
 
     const fetchRuns = async () => {
         setLoading(true);
@@ -24,10 +25,17 @@ export default function JobRuns({ jobId, onClose }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jobId]);
 
+        const handleClose = () => {
+            setClosing(true);
+            setTimeout(() => {
+                onClose();
+            }, 250);
+        };
+
         return (
             <div className="logs-modal">
-            <div className="logs-content">
-            <button className="close-btn" onClick={onClose}>✖ Close</button>
+            <div className={`logs-content ${closing ? 'closing' : ''}`}>
+            <button className="close-btn" onClick={handleClose}>✖ Close</button>
             <h2>📜 Logs for Job #{jobId}</h2>
 
             {loading && <p>Loading...</p>}

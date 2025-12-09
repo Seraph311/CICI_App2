@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import api from './api';
 import Login from './components/Login';
 import Register from './components/Register';
@@ -12,6 +12,48 @@ function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token');
   if (!token) return <Navigate to="/login" replace />;
   return children;
+}
+
+function Header({ user, onLogout }) {
+  const location = useLocation();
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+  const isDashboard = location.pathname === '/';
+  const isScriptsPage = location.pathname === '/scripts';
+
+  return (
+    <header className="app-header">
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+    <h1>⚙️ Cronosphere</h1>
+    {!isAuthPage && user && isScriptsPage && (
+      <a href="/" className="back-to-dashboard">
+      ← Back to Dashboard
+      </a>
+    )}
+    </div>
+    <div>
+    {user ? (
+      <>
+      <span style={{ marginRight: 12 }}>👤 {user.username}</span>
+      {isDashboard && (
+        <button
+        onClick={() => window.location.href = "/scripts"}
+        style={{ marginRight: 8 }}
+        >
+        📜 Scripts
+        </button>
+      )}
+      <button onClick={onLogout}>Logout</button>
+      </>
+    ) : !isAuthPage ? ( // Only show login/register if NOT on auth pages
+    <>
+    <a href="/login" style={{ marginRight: 8 }}>Login</a>
+    <a href="/register">Register</a>
+    </>
+    ) : null}
+    </div>
+    </header>
+  );
 }
 
 export default function App() {
@@ -44,22 +86,7 @@ export default function App() {
     return (
       <BrowserRouter>
       <div className="app-shell">
-      <header className="app-header">
-      <h1>⚙️ Cronosphere</h1>
-      <div>
-      {user ? (
-        <>
-        <span style={{ marginRight: 12 }}>👤 {user.username}</span>
-        <button onClick={handleLogout} style={{ marginLeft: 8 }}>Logout</button>
-        </>
-      ) : (
-        <>
-        <a href="/login" style={{ marginRight: 8 }}>Login</a>
-        <a href="/register">Register</a>
-        </>
-      )}
-      </div>
-      </header>
+      <Header user={user} onLogout={handleLogout} />
 
       <main className="App">
       <Routes>

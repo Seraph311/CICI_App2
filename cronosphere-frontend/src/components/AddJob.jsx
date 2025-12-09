@@ -16,6 +16,7 @@ export default function AddJob({ onJobAdded }) {
 
     const [showCommandModal, setShowCommandModal] = useState(false);
     const [showScriptModal, setShowScriptModal] = useState(false);
+    const [closingModal, setClosingModal] = useState(null); // 'command' or 'script'
     const [scripts, setScripts] = useState([]);
     const [selectedScriptId, setSelectedScriptId] = useState(null);
     const [selectedScriptName, setSelectedScriptName] = useState("");
@@ -100,10 +101,10 @@ export default function AddJob({ onJobAdded }) {
 
             if (selectedScriptId) {
                 payload.script_id = selectedScriptId;
-                payload.command = null; // Clear command if using script
+                payload.command = null;
             } else {
                 payload.command = command;
-                payload.script_id = null; // Clear script_id if using command
+                payload.script_id = null;
             }
 
             const res = await api.post("/jobs", payload);
@@ -130,14 +131,29 @@ export default function AddJob({ onJobAdded }) {
     const handleScriptSelect = (script) => {
         setSelectedScriptId(script.id);
         setSelectedScriptName(script.name);
-        setShowScriptModal(false);
-        // Clear command when selecting a script
+        setClosingModal('script');
+        setTimeout(() => {
+            setShowScriptModal(false);
+            setClosingModal(null);
+        }, 250);
         setCommand("");
     };
 
     const clearScriptSelection = () => {
         setSelectedScriptId(null);
         setSelectedScriptName("");
+    };
+
+    const closeModal = (modalType) => {
+        setClosingModal(modalType);
+        setTimeout(() => {
+            if (modalType === 'command') {
+                setShowCommandModal(false);
+            } else if (modalType === 'script') {
+                setShowScriptModal(false);
+            }
+            setClosingModal(null);
+        }, 250);
     };
 
     return (
@@ -301,9 +317,9 @@ export default function AddJob({ onJobAdded }) {
         </form>
 
         {/* Command Edit Modal */}
-        {showCommandModal && (
+        {(showCommandModal || closingModal === 'command') && (
             <div className="cmd-modal">
-            <div className="cmd-content">
+            <div className={`cmd-content ${closingModal === 'command' ? 'closing' : ''}`}>
             <h3>✏️ Edit Command</h3>
             <p><em>Note: If you enter a command, any selected script will be cleared.</em></p>
 
@@ -316,10 +332,10 @@ export default function AddJob({ onJobAdded }) {
 
             <div className="cmd-actions">
             <button onClick={() => {
-                setShowCommandModal(false);
                 if (command.trim() && selectedScriptId) {
                     clearScriptSelection();
                 }
+                closeModal('command');
             }}>Close</button>
             </div>
             </div>
@@ -327,14 +343,16 @@ export default function AddJob({ onJobAdded }) {
         )}
 
         {/* Script Selection Modal */}
-        {showScriptModal && (
+        {(showScriptModal || closingModal === 'script') && (
             <div className="cmd-modal">
-            <div className="cmd-content">
+            <div className={`cmd-content ${closingModal === 'script' ? 'closing' : ''}`}>
             <h3>📜 Choose Script</h3>
             <p><em>Select a saved script to use for this job</em></p>
 
             {loadingScripts ? (
+                <div className="loading-scripts">
                 <p>Loading scripts...</p>
+                </div>
             ) : scripts.length === 0 ? (
                 <div className="no-scripts">
                 <p>No scripts found. <a href="/scripts">Create one first</a></p>
@@ -352,7 +370,7 @@ export default function AddJob({ onJobAdded }) {
                     <span className="script-type">{script.type}</span>
                     </div>
                     <pre className="script-preview">
-                    {script.content.slice(0, 100)}...
+                    {(script.content || "").slice(0, 100)}...
                     </pre>
                     </div>
                 ))}
@@ -360,7 +378,7 @@ export default function AddJob({ onJobAdded }) {
             )}
 
             <div className="cmd-actions">
-            <button onClick={() => setShowScriptModal(false)}>Cancel</button>
+            <button onClick={() => closeModal('script')}>Cancel</button>
             </div>
             </div>
             </div>

@@ -26,6 +26,85 @@ try {
   log('Could not create scripts dir:', e.message);
 }
 
+const FORBIDDEN_PATTERNS = [
+  /\bsudo\b/i,
+  /\brm\s+-[^\s]*f[^\s]*\b/i,
+  /\bshutdown\b/i,
+  /\breboot\b/i,
+  /\bhalt\b/i,
+  /\bmkfs\./i,
+  /\bfsck\b/i,
+  /\bdd\s+if=/i,
+  /\bfork\b/i,
+  /:(){:|:&};:/,
+  /\bchown\b.*\broot\b/i,
+  /\bchmod\s+0{3,4}\b/i,
+  /\bmount\b/i,
+  /\bumount\b/i,
+  /\bservice\b/i,
+  /\bsystemctl\b/i,
+  // Additional patterns
+  /\bwget\b.*\s+-\s*O\s+.*\/etc\//i,
+  /\bcurl\b.*\s+-\s*O\s+.*\/etc\//i,
+  /\bchmod\s+[0-7]{3,4}\s+\/etc\//i,
+  /\bchmod\s+[0-7]{3,4}\s+\/bin\//i,
+  /\bchmod\s+[0-7]{3,4}\s+\/usr\//i,
+  /\becho\s+.*>\s*\/etc\//i,
+  /\bcat\s+.*>\s*\/etc\//i,
+  /\bnc\s+-l\s+/i,
+  /\bncat\s+-l\s+/i,
+  /\bsocat\s+/i,
+  /\bpython\s+-c\s+/i,
+  /\bperl\s+-e\s+/i,
+  /\bruby\s+-e\s+/i,
+  /\bphp\s+-r\s+/i,
+  /eval\s*\(/i,
+  /exec\s*\(/i,
+  /\$\{.*:.*\}/,
+];
+
+const NODE_FORBIDDEN_PATTERNS = [
+  /require\s*\(\s*['"]child_process['"]/i,
+  /require\s*\(\s*['"]fs['"]\s*\)\s*\.\s*(writeFileSync|appendFileSync|unlinkSync|rmSync|rmdirSync)\s*\(/i,
+  /require\s*\(\s*['"]os['"]\s*\)\s*\.\s*(userInfo|hostname|totalmem|freemem|cpus)/i,
+  /execSync\s*\(/i,
+  /spawnSync\s*\(/i,
+  /fork\s*\(/i,
+  /process\.(exit|kill|abort)\s*\(/i,
+];
+
+function isScriptContentForbidden(content, type = 'bash') {
+  if (!content) return false;
+
+  // Check for general forbidden patterns
+  const hasForbiddenPattern = FORBIDDEN_PATTERNS.some(re => re.test(content));
+
+  // Additional checks for Node.js scripts
+  if (type === 'node') {
+    const hasNodeForbidden = NODE_FORBIDDEN_PATTERNS.some(re => re.test(content));
+    if (hasNodeForbidden) return true;
+
+    // Also check for eval and Function constructor
+    if (content.includes('eval(') || content.includes('Function(') ||
+        content.includes('setTimeout(') || content.includes('setInterval(')) {
+      return true;
+    }
+  }
+
+  return hasForbiddenPattern;
+}
+
+function validateCommand(command) {
+  if (!command) return null;
+
+  const hasForbiddenPattern = FORBIDDEN_PATTERNS.some(re => re.test(command));
+  if (hasForbiddenPattern) {
+    return 'Command contains forbidden operations';
+  }
+
+  return null;
+}
+
 /**
  * Helper: write script content to disk and return filepath
  */
@@ -109,6 +188,16 @@ async function runJobNow(job) {
         return;
       }
 
+      // Validate script content before execution (defense in depth)
+      if (isScriptContentForbidden(script.content, script.type)) {
+        if (userTempDir) await cleanupUserTempDir(userTempDir);
+
+        await pool.query('UPDATE job_runs SET status=$1, output=$2, finished_at=NOW() WHERE id=$3',
+                         ['error', 'script contains forbidden operations and was blocked', runId]);
+        error(`❌ Script ${script_id} for job ${id} contains forbidden operations - blocked`);
+        return;
+      }
+
       const filepath = await writeScriptToFile(script_id, script.content, script.type);
 
       // Set environment variables for the job
@@ -172,6 +261,17 @@ async function runJobNow(job) {
       });
 
     } else {
+      // Validate command before execution
+      const commandError = validateCommand(command);
+      if (commandError) {
+        if (userTempDir) await cleanupUserTempDir(userTempDir);
+
+        await pool.query('UPDATE job_runs SET status=$1, output=$2, finished_at=NOW() WHERE id=$3',
+                         ['error', commandError, runId]);
+        error(`❌ Command for job ${id} contains forbidden operations - blocked`);
+        return;
+      }
+
       // Execute plain command with user temp directory
       const env = {
         ...process.env,

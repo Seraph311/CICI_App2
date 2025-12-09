@@ -10,7 +10,9 @@ export default function ScriptList({ onSelect }) {
         setLoading(true);
         try {
             const res = await api.get("/scripts");
-            setScripts(res.data || []);
+            // Ensure we have an array and each item has the expected properties
+            const scriptsData = Array.isArray(res.data) ? res.data : [];
+            setScripts(scriptsData);
         } catch (err) {
             console.error("Failed to load scripts:", err);
             alert(err.response?.data?.error || "Failed to load scripts");
@@ -50,22 +52,35 @@ export default function ScriptList({ onSelect }) {
             <p>No scripts saved. Create one!</p>
         ) : (
             <ul>
-            {scripts.map((s) => (
-                <li key={s.id} onClick={() => onSelect(s)}>
-                <div className="script-item-header">
-                <strong>{s.name}</strong>
-                <span className="script-type">{s.type}</span>
-                <button
-                className="delete-btn"
-                onClick={(e) => handleDelete(s.id, e)}
-                >
-                🗑
-                </button>
-                </div>
-                <pre className="script-preview">{s.content.slice(0, 80)}...</pre>
-                <small>Created: {new Date(s.created_at).toLocaleDateString()}</small>
-                </li>
-            ))}
+            {scripts.map((s) => {
+                // Safely extract script properties
+                const scriptId = s.id || s.Id || "";
+                const scriptName = s.name || s.Name || "Unnamed Script";
+                const scriptType = s.type || s.Type || "bash";
+                const scriptContent = s.content || s.Content || "";
+                const createdAt = s.created_at || s.createdAt || s.CreatedAt;
+
+                return (
+                    <li key={scriptId} onClick={() => onSelect(s)}>
+                    <div className="script-item-header">
+                    <strong>{scriptName}</strong>
+                    <span className="script-type">{scriptType}</span>
+                    <button
+                    className="delete-btn"
+                    onClick={(e) => handleDelete(scriptId, e)}
+                    >
+                    🗑
+                    </button>
+                    </div>
+                    <pre className="script-preview">
+                    {(scriptContent || "").slice(0, 80)}...
+                    </pre>
+                    <small>
+                    Created: {createdAt ? new Date(createdAt).toLocaleDateString() : "Unknown"}
+                    </small>
+                    </li>
+                );
+            })}
             </ul>
         )}
         </div>

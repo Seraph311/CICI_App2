@@ -163,3 +163,244 @@
 .editor-actions .secondary:hover {
     background: #888;
 }
+
+.script-manager-container {
+    padding: 20px;
+}
+
+.script-manager-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.script-manager-header h2 {
+    margin: 0;
+}
+
+.script-manager-layout {
+    display: flex;
+    gap: 30px;
+}
+
+.script-list-panel {
+    flex: 1;
+    max-width: 400px;
+}
+
+.script-editor-panel {
+    flex: 2;
+}
+
+/* Terminal-style editor */
+.terminal-editor {
+    background: #000;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    border: 1px solid #333;
+    padding: 15px;
+    border-radius: 8px;
+    width: 100%;
+    min-height: 400px;
+    resize: vertical;
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+}
+
+.terminal-editor:focus {
+    outline: 1px solid #4c8bf5;
+    border-color: #4c8bf5;
+}
+
+/* Form styling */
+.script-editor-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-weight: 600;
+    color: #ddd;
+}
+
+.form-group input,
+.form-group select {
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #444;
+    background: #222;
+    color: white;
+    font-size: 14px;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: 1px solid #4c8bf5;
+    border-color: #4c8bf5;
+}
+
+.script-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.script-actions button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.script-actions button.primary {
+    background: #4c8bf5;
+    color: white;
+    flex: 2;
+}
+
+.script-actions button.primary:hover {
+    background: #376fd4;
+    transform: translateY(-1px);
+}
+
+.script-actions button.secondary {
+    background: #666;
+    color: white;
+    flex: 1;
+}
+
+.script-actions button.secondary:hover {
+    background: #888;
+    transform: translateY(-1px);
+}
+
+/* List styling */
+.script-list {
+    background: #222;
+    border-radius: 8px;
+    padding: 15px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.script-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.script-list-header h3 {
+    margin: 0;
+}
+
+.refresh-btn {
+    background: #444;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+    background: #666;
+    transform: rotate(180deg);
+}
+
+.script-item {
+    background: #333;
+    padding: 12px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.script-item:hover {
+    background: #444;
+    border-color: #555;
+}
+
+.script-item.selected {
+    border-color: #4c8bf5;
+    background: #1a3a5f;
+}
+
+.script-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.script-item-header strong {
+    color: white;
+}
+
+.script-type {
+    background: #555;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.script-preview {
+    background: #111;
+    color: #ccc;
+    padding: 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 8px 0;
+}
+
+.script-meta {
+    color: #888;
+    font-size: 12px;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #888;
+}
+
+.empty-state p {
+    margin: 10px 0;
+}
+
+.create-new-btn {
+    background: #4c8bf5;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.create-new-btn:hover {
+    background: #376fd4;
+}

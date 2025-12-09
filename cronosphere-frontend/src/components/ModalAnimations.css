@@ -1,0 +1,96 @@
+/* ModalAnimations.css */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn .25s ease forwards;
+  z-index: 1000;
+}
+
+/* OPEN animation */
+.modal-bounce-in {
+  animation: modalBounceIn .35s ease forwards;
+}
+
+/* CLOSE animation */
+.modal-bounce-out {
+  animation: modalBounceOut .25s ease forwards;
+}
+
+/* Fade overlay */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* Bounce-in effect */
+@keyframes modalBounceIn {
+  0%   { transform: scale(0.7); opacity: 0; }
+  55%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Bounce-out effect */
+@keyframes modalBounceOut {
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.7); opacity: 0; }
+}
+
+/* Modal content base style */
+.modal-content {
+  background: #1a1a1a;
+  padding: 25px;
+  border-radius: 12px;
+  width: 500px;
+  max-width: 90%;
+  max-height: 90vh;
+  box-shadow: 0 0 20px rgba(0,0,0,0.6);
+  border: 2px solid black;
+  color: white;
+  overflow-y: auto;
+}
+
+/* Terminal-style textarea */
+.terminal-textarea {
+  background: #000;
+  color: #00ff00;
+  font-family: 'Courier New', monospace;
+  border: 1px solid #333;
+  padding: 12px;
+  border-radius: 6px;
+  width: 100%;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.terminal-textarea:focus {
+  outline: 1px solid #4c8bf5;
+  border-color: #4c8bf5;
+}
+
+/* Close button style */
+.modal-close-btn {
+  float: right;
+  background: #ff4444;
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.modal-close-btn:hover {
+  background: #dd3333;
+  transform: scale(1.05);
+}
