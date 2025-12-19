@@ -17,6 +17,65 @@ const info = (...args) => console.log(...args);
 const warn = (...args) => console.warn(...args);
 const error = (...args) => console.error(...args);
 
+// Keep-alive function that works in any environment
+async function pingRenderService() {
+  const renderUrl = process.env.RENDER_EXTERNAL_URL;
+
+  if (!renderUrl) {
+    return { success: false, reason: 'No RENDER_EXTERNAL_URL set' };
+  }
+
+  try {
+    // Try using fetch (Node.js 18+ has built-in fetch)
+    let fetchFunc;
+    try {
+      fetchFunc = fetch;
+    } catch {
+      // Fallback to dynamic import
+      const { default: fetchModule } = await import('node-fetch');
+      fetchFunc = fetchModule;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const start = Date.now();
+    const response = await fetchFunc(renderUrl, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Render-KeepAlive/1.0' }
+    });
+    clearTimeout(timeoutId);
+
+    const duration = Date.now() - start;
+    return {
+      success: response.ok,
+      status: response.status,
+      duration
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Schedule it with cron
+cron.schedule('*/10 * * * *', async () => {
+  const result = await pingRenderService();
+  if (result.success) {
+    log(`✅ Keep-alive ping: ${result.status} (${result.duration}ms)`);
+  } else {
+    warn(`⚠️ Keep-alive failed: ${result.error || 'Unknown error'}`);
+  }
+});
+
+// Run immediately on startup
+setTimeout(async () => {
+  const result = await pingRenderService();
+  console.log(result.success ?
+  `🚀 Initial keep-alive: ${result.status} (${result.duration}ms)` :
+  `⚠️ Initial keep-alive failed: ${result.error}`
+  );
+}, 5000);
+
 // ensure /tmp/scripts exists
 const SCRIPTS_DIR = '/tmp/scripts';
 try {
@@ -148,13 +207,13 @@ function isScriptContentForbidden(content, type = 'bash') {
     // Check for potentially dangerous patterns in Node.js scripts
     const dangerousPatterns = [
       /*
-        /eval\s*\(/,
-        /new\s+Function\s*\(/,
-        /require\s*\(\s*["']child_process["']/,
-        /require\s*\(\s*["']fs["']/,
-        /process\.exit\s*\(/,
-        /process\.kill\s*\(/
-        */
+       / eval\s*\(/,                  *
+       /new\s+Function\s*\(/,
+       /require\s*\(\s*["']child_process["']/,
+       /require\s*\(\s*["']fs["']/,
+       /process\.exit\s*\(/,
+       /process\.kill\s*\(/
+       */
     ];
 
     if (dangerousPatterns.some(pattern => pattern.test(content))) {
@@ -329,7 +388,7 @@ async function runJobNow(job) {
         // Increase Node.js memory and timeout settings
         NODE_OPTIONS: '--max-old-space-size=512 --max-semi-space-size=64 --no-deprecation',
         UV_THREADPOOL_SIZE: '4'
-    };
+      };
 
       // Spawn the appropriate interpreter
       if (script.type === 'node') {
