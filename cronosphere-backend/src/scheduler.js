@@ -22,16 +22,21 @@ async function pingRenderService() {
   const renderUrl = process.env.RENDER_EXTERNAL_URL;
 
   if (!renderUrl) {
+    console.log('⚠️ RENDER_EXTERNAL_URL is not set in environment variables');
     return { success: false, reason: 'No RENDER_EXTERNAL_URL set' };
   }
+
+  console.log(`🔍 Attempting to ping: ${renderUrl}`);
 
   try {
     // Try using fetch (Node.js 18+ has built-in fetch)
     let fetchFunc;
     try {
       fetchFunc = fetch;
+      console.log('📡 Using built-in fetch API');
     } catch {
       // Fallback to dynamic import
+      console.log('📡 Falling back to node-fetch module');
       const { default: fetchModule } = await import('node-fetch');
       fetchFunc = fetchModule;
     }
@@ -40,42 +45,79 @@ async function pingRenderService() {
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     const start = Date.now();
-    const response = await fetchFunc(renderUrl, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Render-KeepAlive/1.0' }
-    });
-    clearTimeout(timeoutId);
 
-    const duration = Date.now() - start;
-    return {
-      success: response.ok,
-      status: response.status,
-      duration
-    };
+    try {
+      console.log(`🔄 Sending request to ${renderUrl}`);
+      const response = await fetchFunc(renderUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Render-KeepAlive/1.0' }
+      });
+      clearTimeout(timeoutId);
+
+      const duration = Date.now() - start;
+      console.log(`📥 Response status: ${response.status} (${duration}ms)`);
+
+      return {
+        success: response.ok,
+        status: response.status,
+        duration
+      };
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      console.log(`❌ Fetch error:`, fetchErr);
+
+      // Check specific error types
+      if (fetchErr.name === 'AbortError') {
+        return { success: false, error: 'Request timeout (15s)' };
+      }
+
+      if (fetchErr.code === 'ENOTFOUND' || fetchErr.code === 'ECONNREFUSED') {
+        return { success: false, error: `Cannot connect to ${renderUrl}` };
+      }
+
+      throw fetchErr; // Re-throw for outer catch block
+    }
   } catch (error) {
+    console.log(`💥 Unexpected error during ping:`, error);
+
     // Handle the case where error might not have a message property
     const errorMessage = error?.message || error?.toString() || 'Unknown error';
-    return { success: false, error: errorMessage };
+
+    // Additional diagnostics
+    let detailedError = errorMessage;
+    if (error?.code) {
+      detailedError += ` (code: ${error.code})`;
+    }
+    if (error?.errno) {
+      detailedError += ` (errno: ${error.errno})`;
+    }
+    if (error?.syscall) {
+      detailedError += ` (syscall: ${error.syscall})`;
+    }
+
+    return { success: false, error: detailedError };
   }
 }
 
 // Schedule it with cron
 cron.schedule('*/10 * * * *', async () => {
+  console.log(`🕐 [${new Date().toISOString()}] Running keep-alive ping...`);
   const result = await pingRenderService();
   if (result.success) {
-    log(`✅ Keep-alive ping: ${result.status} (${result.duration}ms)`);
+    console.log(`✅ Keep-alive ping successful: ${result.status} (${result.duration}ms)`);
   } else {
-    warn(`⚠️ Keep-alive failed: ${result.error || result.reason || 'Unknown error'}`);
+    console.warn(`⚠️ Keep-alive failed: ${result.error || result.reason || 'Unknown error'}`);
   }
 });
 
 // Run immediately on startup
 setTimeout(async () => {
+  console.log('🚀 Running initial keep-alive ping...');
   const result = await pingRenderService();
   if (result.success) {
-    console.log(`🚀 Initial keep-alive: ${result.status} (${result.duration}ms)`);
+    console.log(`🚀 Initial keep-alive successful: ${result.status} (${result.duration}ms)`);
   } else {
-    console.log(`⚠️ Initial keep-alive failed: ${result.error || result.reason || 'Unknown error'}`);
+    console.warn(`⚠️ Initial keep-alive failed: ${result.error || result.reason || 'Unknown error'}`);
   }
 }, 5000);
 
