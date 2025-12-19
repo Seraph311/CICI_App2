@@ -27,9 +27,11 @@ try {
 }
 
 const FORBIDDEN_PATTERNS = [
+  // Add your forbidden patterns here as RegExp objects
 ];
 
 const NODE_FORBIDDEN_PATTERNS = [
+  // Add Node.js specific forbidden patterns here
 ];
 
 // === SHARED MODULE CACHE ===
@@ -53,7 +55,7 @@ async function preloadCommonModules() {
   for (const module of heavyModules) {
     try {
       const start = Date.now();
-      const mod = require(module.name);
+      const mod = await import(module.name);
       const loadTime = Date.now() - start;
 
       sharedModuleCache.set(module.name, mod);
@@ -84,11 +86,19 @@ function isScriptContentForbidden(content, type = 'bash') {
     const hasNodeForbidden = NODE_FORBIDDEN_PATTERNS.some(re => re.test(content));
     if (hasNodeForbidden) return true;
 
-    // Also check for eval and Function constructor
-    // if (content.includes('eval(') || content.includes('Function(') ||
-    //     content.includes('setTimeout(') || content.includes('setInterval(')) {
-    //   return true;
-    // }
+    // Check for potentially dangerous patterns in Node.js scripts
+    const dangerousPatterns = [
+      /eval\s*\(/,
+                /new\s+Function\s*\(/,
+                                    /require\s*\(\s*["']child_process["']/,
+                                                 /require\s*\(\s*["']fs["']/,
+                                                              /process\.exit\s*\(/,
+                                                                                 /process\.kill\s*\(/
+    ];
+
+    if (dangerousPatterns.some(pattern => pattern.test(content))) {
+      return true;
+    }
   }
 
   return hasForbiddenPattern;
@@ -159,52 +169,49 @@ async function createNodeScriptWrapper(originalContent, projectRoot, nodeModules
 
     if (preloadedModules.includes(moduleName)) {
       // Send request to parent process for module
-      process.send && process.send({ type: 'GET_MODULE', module: moduleName });
+      if (process.send) {
+        process.send({ type: 'GET_MODULE', module: moduleName });
 
-      // For now, fall back to normal require
-      try {
-        const mod = require(moduleName);
-        sharedModules.set(moduleName, mod);
-        return mod;
-      } catch (err) {
-        throw err;
+        // Set up a one-time listener for module response
+        return new Promise((resolve) => {
+          const listener = (message) => {
+            if (message.type === 'MODULE_RESPONSE' && message.module === moduleName) {
+              process.removeListener('message', listener);
+              // For now, fall back to normal require
+              try {
+                const mod = require(moduleName);
+                sharedModules.set(moduleName, mod);
+                resolve(mod);
+              } catch (err) {
+                console.warn(\`Could not load shared module \${moduleName}: \${err.message}\`);
+                resolve(null);
+              }
+            }
+          };
+          process.on('message', listener);
+
+          // Timeout fallback
+          setTimeout(() => {
+            process.removeListener('message', listener);
+            try {
+              const mod = require(moduleName);
+              sharedModules.set(moduleName, mod);
+              resolve(mod);
+            } catch (err) {
+              console.warn(\`Timeout loading shared module \${moduleName}\`);
+              resolve(null);
+            }
+          }, 1000);
+        });
       }
     }
 
     return null;
   }
 
-  // Override require to use shared modules
-  const originalRequire = require;
-  const Module = require('module');
-  const originalResolveFilename = Module._resolveFilename;
-
-  // Enhanced module resolution
-  Module._resolveFilename = function(request, parent, isMain) {
-    try {
-      return originalResolveFilename.call(this, request, parent, isMain);
-    } catch (err) {
-      if (err.code === 'MODULE_NOT_FOUND') {
-        // Try project's node_modules first
-        try {
-          return require.resolve(request, { paths: ['${nodeModulesPath}'] });
-        } catch (e1) {
-          // Try default paths
-          const defaultPaths = require.resolve.paths(request) || [];
-          for (const p of defaultPaths) {
-            try {
-              return require.resolve(request, { paths: [p] });
-            } catch (e3) {
-              // Continue
-            }
-          }
-        }
-      }
-      throw err;
-    }
-  };
-
   // Patch require to intercept heavy modules
+  const originalRequire = require;
+
   require = function(moduleName) {
     // Check if this is a heavy module we want to optimize
     const heavyModules = ['discord.js', 'minecraft-server-util', 'axios', 'node-fetch', 'ws'];
@@ -212,7 +219,13 @@ async function createNodeScriptWrapper(originalContent, projectRoot, nodeModules
     for (const heavyModule of heavyModules) {
       if (moduleName === heavyModule || moduleName.startsWith(heavyModule + '/')) {
         const shared = getSharedModule(heavyModule);
-        if (shared) {
+        if (shared && typeof shared !== 'object') {
+          // If shared is a Promise (async loading), we need to handle it
+          if (shared.then) {
+            // This is a complex scenario - for now, fall back to sync require
+            console.warn(\`Async loading not supported for \${moduleName}, using sync require\`);
+            break;
+          }
           return shared;
         }
         break;
@@ -332,14 +345,14 @@ async function runJobNow(job) {
         ...process.env,
         USER_TEMP_DIR: userTempDir,
         JOB_ID: id.toString(),
-        USER_ID: owner.toString(),
-        JOB_NAME: name,
-        SCRIPT_ID: script_id.toString(),
-        NODE_PATH: `${nodeModulesPath}:${process.env.NODE_PATH || ''}`,
-        PROJECT_ROOT: projectRoot,
-        // Increase Node.js memory and timeout settings
-        NODE_OPTIONS: '--max-old-space-size=512 --max-semi-space-size=64',
-        UV_THREADPOOL_SIZE: '4'
+                                                                                                    USER_ID: owner.toString(),
+                                                                                                    JOB_NAME: name,
+                                                                                                    SCRIPT_ID: script_id.toString(),
+                                                                                                    NODE_PATH: `${nodeModulesPath}:${process.env.NODE_PATH || ''}`,
+                                                                                                    PROJECT_ROOT: projectRoot,
+                                                                                                    // Increase Node.js memory and timeout settings
+                                                                                                    NODE_OPTIONS: '--max-old-space-size=512 --max-semi-space-size=64',
+                                                                                                    UV_THREADPOOL_SIZE: '4'
       };
 
       // Spawn the appropriate interpreter
@@ -352,24 +365,31 @@ async function runJobNow(job) {
         await fs.promises.writeFile(filepath, wrappedContent, { mode: 0o700 });
 
         // Spawn with increased timeout and better settings
-        child = spawn(process.execPath || 'node', [filepath], {
+        const spawnOptions = {
           timeout: 300000, // 5 minutes timeout (increased from 2)
-        env: env,
-        cwd: projectRoot,
-        stdio: ['pipe', 'pipe', 'pipe', 'ipc'] // Add IPC for module sharing
-        });
+                                                                                 env: env,
+                                                                                 cwd: projectRoot
+        };
+
+        // Add IPC only if we're using it for module sharing
+        if (process.send) {
+          spawnOptions.stdio = ['pipe', 'pipe', 'pipe', 'ipc'];
+        }
+
+        child = spawn(process.execPath || 'node', [filepath], spawnOptions);
 
         // Handle IPC messages for module sharing
-        child.on('message', (message) => {
-          if (message.type === 'GET_MODULE' && sharedModuleCache.has(message.module)) {
-            child.send({
-              type: 'MODULE_RESPONSE',
-              module: message.module,
-              // Can't actually send the module object, but we can send metadata
-              available: true
-            });
-          }
-        });
+        if (child.send) {
+          child.on('message', (message) => {
+            if (message.type === 'GET_MODULE' && sharedModuleCache.has(message.module)) {
+              child.send({
+                type: 'MODULE_RESPONSE',
+                module: message.module,
+                available: true
+              });
+            }
+          });
+        }
 
       } else { // bash
         child = spawn('bash', [filepath], {
@@ -437,8 +457,8 @@ async function runJobNow(job) {
         ...process.env,
         USER_TEMP_DIR: userTempDir,
         JOB_ID: id.toString(),
-        USER_ID: owner.toString(),
-        JOB_NAME: name
+                                                                                                    USER_ID: owner.toString(),
+                                                                                                    JOB_NAME: name
       };
 
       child = exec(command, {
@@ -529,7 +549,7 @@ export async function scheduleJob(job, runNow = false) {
   });
 
   scheduledJobs.set(job.id, task);
-  info(`⏰ Scheduled job #${job.id}: "${name}" (${job.schedule})`);
+  info(`⏰ Scheduled job #${job.id}: "${job.name}" (${job.schedule})`);
 }
 
 /**
