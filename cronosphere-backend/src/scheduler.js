@@ -44,10 +44,10 @@ function isScriptContentForbidden(content, type = 'bash') {
     if (hasNodeForbidden) return true;
 
     // Also check for eval and Function constructor
-   // if (content.includes('eval(') || content.includes('Function(') ||
-   //     content.includes('setTimeout(') || content.includes('setInterval(')) {
-   //   return true;
-   // }
+    // if (content.includes('eval(') || content.includes('Function(') ||
+    //     content.includes('setTimeout(') || content.includes('setInterval(')) {
+    //   return true;
+    // }
   }
 
   return hasForbiddenPattern;
@@ -159,30 +159,118 @@ async function runJobNow(job) {
 
       const filepath = await writeScriptToFile(script_id, script.content, script.type);
 
-      // Set environment variables for the job
+      // Get project root and node_modules path
+      const projectRoot = process.cwd();
+      const nodeModulesPath = path.join(projectRoot, 'node_modules');
+
+      // Debug logging
+      console.log('=== DEBUG: Module Resolution ===');
+      console.log('Project root:', projectRoot);
+      console.log('Node modules path:', nodeModulesPath);
+      console.log('Node modules exists?', fs.existsSync(nodeModulesPath));
+      console.log('discord.js exists?', fs.existsSync(path.join(nodeModulesPath, 'discord.js')));
+      console.log('Script path:', filepath);
+      console.log('Script type:', script.type);
+
+      // Set environment variables for the job with NODE_PATH
       const env = {
         ...process.env,
         USER_TEMP_DIR: userTempDir,
         JOB_ID: id.toString(),
         USER_ID: owner.toString(),
         JOB_NAME: name,
-        SCRIPT_ID: script_id.toString()
+        SCRIPT_ID: script_id.toString(),
+        NODE_PATH: `${nodeModulesPath}:${process.env.NODE_PATH || ''}`
       };
 
       // Spawn the appropriate interpreter
       if (script.type === 'node') {
+        // For Node.js scripts, we need to modify them to handle module resolution
+        const originalContent = await fs.promises.readFile(filepath, 'utf8');
+
+        // Create a wrapper that handles module resolution
+        const wrapperContent = `
+        // Module resolution wrapper for Render environment
+        const Module = require('module');
+        const originalResolveFilename = Module._resolveFilename;
+        const path = require('path');
+
+        const projectRoot = '${projectRoot.replace(/'/g, "\\'")}';
+        const nodeModulesPath = path.join(projectRoot, 'node_modules');
+
+        Module._resolveFilename = function(request, parent, isMain) {
+          try {
+            return originalResolveFilename.call(this, request, parent, isMain);
+          } catch (err) {
+            if (err.code === 'MODULE_NOT_FOUND') {
+              // Try project's node_modules
+              try {
+                return require.resolve(request, { paths: [nodeModulesPath] });
+              } catch (e1) {
+                // Try parent directory's node_modules
+                if (parent && parent.filename) {
+                  const parentDir = path.dirname(parent.filename);
+                  const parentNodeModules = path.join(parentDir, 'node_modules');
+                  try {
+                    return require.resolve(request, { paths: [parentNodeModules] });
+                  } catch (e2) {
+                    // Try default paths
+                    const defaultPaths = require.resolve.paths(request) || [];
+                    for (const p of defaultPaths) {
+                      try {
+                        return require.resolve(request, { paths: [p] });
+                      } catch (e3) {
+                        // Continue
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            throw err;
+          }
+        };
+
+        // Add project's node_modules to require paths
+        if (!require.resolve.paths) {
+          require.resolve.paths = function(request) {
+            return [nodeModulesPath];
+          };
+        } else {
+          const originalPaths = require.resolve.paths;
+          require.resolve.paths = function(request) {
+            const paths = originalPaths.call(this, request) || [];
+            return [nodeModulesPath, ...paths];
+          };
+        }
+
+        // Load the original script
+        try {
+          // First test if we can load discord.js
+          console.log('Attempting to load dependencies...');
+
+          ${originalContent}
+
+        } catch (scriptErr) {
+          console.error('Script execution error:', scriptErr.message);
+          console.error('Stack:', scriptErr.stack);
+          process.exit(1);
+        }
+        `;
+
+        // Write the wrapped script
+        await fs.promises.writeFile(filepath, wrapperContent, { mode: 0o700 });
+
         child = spawn(process.execPath || 'node', [filepath], {
-          timeout: 60000,
+          timeout: 120000, // Increased timeout for Discord bot startup
           env: env,
-          // cwd: userTempDir  // Run in user's temp directory
-          cwd: process.cwd()
+          cwd: projectRoot  // Run from project root
         });
       } else { // bash
         child = spawn('bash', [filepath], {
           timeout: 60000,
           env: env,
-          // cwd: userTempDir  // Run in user's temp directory
-          cwd: process.cwd()
+          cwd: userTempDir  // Bash scripts run in temp dir
         });
       }
 
