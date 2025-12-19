@@ -27,11 +27,11 @@ try {
 }
 
 const FORBIDDEN_PATTERNS = [
-  // Add your forbidden patterns here as RegExp objects
+  // Removed for now
 ];
 
 const NODE_FORBIDDEN_PATTERNS = [
-  // Add Node.js specific forbidden patterns here
+  // Removed for now
 ];
 
 // === SHARED MODULE CACHE ===
@@ -148,11 +148,11 @@ function isScriptContentForbidden(content, type = 'bash') {
     // Check for potentially dangerous patterns in Node.js scripts
     const dangerousPatterns = [
       /eval\s*\(/,
-      /new\s+Function\s*\(/,
-      /require\s*\(\s*["']child_process["']/,
-      /require\s*\(\s*["']fs["']/,
-      /process\.exit\s*\(/,
-      /process\.kill\s*\(/
+                /new\s+Function\s*\(/,
+                                    /require\s*\(\s*["']child_process["']/,
+                                                 /require\s*\(\s*["']fs["']/,
+                                                              /process\.exit\s*\(/,
+                                                                                 /process\.kill\s*\(/
     ];
 
     if (dangerousPatterns.some(pattern => pattern.test(content))) {
@@ -235,13 +235,7 @@ async function createNodeScriptWrapper(originalContent, projectRoot, nodeModules
   }
 
   // === ORIGINAL SCRIPT ===
-  try {
-    ${originalContent}
-  } catch (scriptErr) {
-    console.error('❌ Script execution error:', scriptErr.message);
-    console.error('Stack:', scriptErr.stack);
-    process.exit(1);
-  }
+  ${originalContent}
   `;
 }
 
@@ -312,6 +306,14 @@ async function runJobNow(job) {
       const projectRoot = process.cwd();
       const nodeModulesPath = path.join(projectRoot, 'node_modules');
 
+      // Check if this is a Discord bot script to adjust timeout
+      const isDiscordBot = script.content.includes('discord.js') ||
+      script.content.includes('new Client') ||
+      script.content.includes('GatewayIntentBits');
+
+      // Set timeout based on script type
+      const timeout = isDiscordBot ? 600000 : 300000; // 10 minutes for Discord bots, 5 for others
+
       // Set environment variables for the job
       const env = {
         ...process.env,
@@ -323,22 +325,49 @@ async function runJobNow(job) {
         NODE_PATH: `${nodeModulesPath}:${process.env.NODE_PATH || ''}`,
         PROJECT_ROOT: projectRoot,
         // Increase Node.js memory and timeout settings
-        NODE_OPTIONS: '--max-old-space-size=512 --max-semi-space-size=64',
+        NODE_OPTIONS: '--max-old-space-size=512 --max-semi-space-size=64 --no-deprecation',
         UV_THREADPOOL_SIZE: '4'
-      };
+    };
 
       // Spawn the appropriate interpreter
       if (script.type === 'node') {
         // For Node.js scripts, create wrapper with environment setup
         const originalContent = await fs.promises.readFile(filepath, 'utf8');
-        const wrappedContent = await createNodeScriptWrapper(originalContent, projectRoot, nodeModulesPath);
 
-        // Write the wrapped script
-        await fs.promises.writeFile(filepath, wrappedContent, { mode: 0o700 });
+        // Only wrap if it's not a Discord bot (Discord bots need to handle their own lifecycle)
+        let finalContent;
+        if (isDiscordBot) {
+          // For Discord bots, we need to ensure they handle SIGTERM properly
+          // Check if the script already has SIGTERM handling
+          if (!originalContent.includes('SIGTERM') && !originalContent.includes('process.on')) {
+            // Add basic SIGTERM handling
+            finalContent = originalContent + `
 
-        // Spawn with increased timeout and better settings
+            // Auto-added SIGTERM handler for scheduler compatibility
+            process.on('SIGTERM', () => {
+              console.log('Received SIGTERM from scheduler, shutting down...');
+              if (typeof client !== 'undefined' && client.destroy) {
+                client.destroy();
+              }
+              process.exit(0);
+            });
+
+            console.log('🤖 Discord bot running with scheduler timeout of ${timeout/1000/60} minutes');
+            `;
+          } else {
+            finalContent = originalContent;
+          }
+        } else {
+          const wrappedContent = await createNodeScriptWrapper(originalContent, projectRoot, nodeModulesPath);
+          finalContent = wrappedContent;
+        }
+
+        // Write the final script
+        await fs.promises.writeFile(filepath, finalContent, { mode: 0o700 });
+
+        // Spawn with appropriate timeout
         child = spawn(process.execPath || 'node', [filepath], {
-          timeout: 300000, // 5 minutes timeout
+          timeout: timeout,
           env: env,
           cwd: projectRoot
         });
@@ -360,7 +389,7 @@ async function runJobNow(job) {
         const status = code === 0 ? 'success' : 'error';
         const finished_at = new Date();
         const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-        const timedOut = signal === 'SIGTERM' && duration >= 300; // 5 minutes
+        const timedOut = signal === 'SIGTERM' && duration >= (timeout/1000 - 10); // Check if timed out
 
         try {
           await pool.query(
