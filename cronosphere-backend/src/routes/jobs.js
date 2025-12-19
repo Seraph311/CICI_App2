@@ -9,76 +9,6 @@ router.use(requireAuth);
 
 // Forbidden patterns - expanded for both commands and scripts
 const FORBIDDEN_PATTERNS = [
-  /\bsudo\b/i,
-  /\brm\s+-[^\s]*f[^\s]*\b/i,
-  /\bshutdown\b/i,
-  /\breboot\b/i,
-  /\bhalt\b/i,
-  /\bmkfs\./i,
-  /\bfsck\b/i,
-  /\bdd\s+if=/i,
-  /\bfork\b/i,
-  /:(){:|:&};:/,
-  /\bchown\b.*\broot\b/i,
-  /\bchmod\s+0{3,4}\b/i,
-  /\bmount\b/i,
-  /\bumount\b/i,
-  /\bservice\b/i,
-  /\bsystemctl\b/i,
-  // More specific patterns to avoid false positives:
-  /\bwget\b.*\s+-\s*O\s+.*\/etc\//i,
-  /\bcurl\b.*\s+-\s*O\s+.*\/etc\//i,
-  /\bchmod\s+[0-7]{3,4}\s+\/etc\//i,
-  /\bchmod\s+[0-7]{3,4}\s+\/bin\//i,
-  /\bchmod\s+[0-7]{3,4}\s+\/usr\//i,
-  /\becho\s+.*>\s*\/etc\//i,
-  /\bcat\s+.*>\s*\/etc\//i,
-  /\bnc\s+-l\s+/i,
-  /\bncat\s+-l\s+/i,
-  /\bsocat\s+/i,
-  /\bpython\s+-c\s+/i,
-  /\bperl\s+-e\s+/i,
-  /\bruby\s+-e\s+/i,
-  /\bphp\s+-r\s+/i,
-  /eval\s*\([^)]*\)[^;]*[;&|]/i, // More specific eval pattern
-  /exec\s*\([^)]*\)[^;]*[;&|]/i, // More specific exec pattern
-  // Remove or fix these problematic patterns:
-  // /\$\{.*:.*\}/, // Too broad - matches template literals
-  // /\$\(.*\)/i,   // Too broad - matches harmless things
-  // /`.*`/i,       // Too broad - matches backticks in general
-
-  // Network related - make more specific
-  /\bssh\s+.*@.*\s+.*(sudo|rm|shutdown)/i,
-  /\bscp\s+.*\s+.*@.*:.*\/(etc|bin|sbin|usr)/i,
-  /\bsftp\s+.*@.*/i,
-  /\bwget\s+.*\s+-\s*O\s+.*\/(etc|bin|sbin|usr|root)/i,
-  /\bcurl\s+.*\s+-\s*O\s+.*\/(etc|bin|sbin|usr|root)/i,
-
-  // Process manipulation - make more specific
-  /\bkill\s+-\s*9\s+.*(init|systemd|ssh)/i,
-  /\bpkill\s+.*(ssh|system|init)/i,
-  /\bkillall\s+.*(ssh|system|init)/i,
-
-  // File system manipulation in system directories - more specific
-  /\bmv\s+.*\s+\/(etc|bin|sbin|usr|lib|var|root|home|boot|dev|proc|sys)\/\S+/i,
-  /\bcp\s+.*\s+\/(etc|bin|sbin|usr|lib|var|root|home|boot|dev|proc|sys)\/\S+/i,
-
-  // Dangerous file operations - more specific
-  /\b>.*\s+\/(etc|bin|sbin|usr|lib|var|root|home)\/\S+/i,
-  /\b>>.*\s+\/(etc|bin|sbin|usr|lib|var|root|home)\/\S+/i,
-
-  // Environment tampering - more specific
-  /\bexport\s+.*=.*\/etc\/\S+/i,
-  /\bunset\s+PATH\b/i,
-
-  // Shell escapes - more specific
-  /\$\([^)]*(rm|sudo|shutdown|reboot|halt|chmod|chown|mount|umount)[^)]*\)/i,
-  /`[^`]*(rm|sudo|shutdown|reboot|halt|chmod|chown|mount|umount)[^`]*`/i,
-
-  // Database access - more specific
-  /\bpsql\s+.*\s+-c\s+.*(DROP|DELETE|TRUNCATE|ALTER)/i,
-  /\bmysql\s+.*\s+-e\s+.*(DROP|DELETE|TRUNCATE|ALTER)/i,
-  /\bsqlite3\s+.*\s+.*(DROP|DELETE|TRUNCATE|ALTER)/i,
 ];
 
 // Node.js specific forbidden patterns
@@ -97,9 +27,9 @@ function isForbidden(content, type = 'bash') {
     if (hasNodeForbidden) return true;
 
     // Also check for eval and Function constructor
-    if (content.includes('eval(') || content.includes('Function(') || content.includes('setTimeout(') || content.includes('setInterval(')) {
-      return true;
-    }
+   // if (content.includes('eval(') || content.includes('Function(') || content.includes('setTimeout(') || content.includes('setInterval(')) {
+     // return true;
+   // }
   }
 
   return hasForbiddenPattern;

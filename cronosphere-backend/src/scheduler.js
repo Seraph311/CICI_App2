@@ -44,10 +44,10 @@ function isScriptContentForbidden(content, type = 'bash') {
     if (hasNodeForbidden) return true;
 
     // Also check for eval and Function constructor
-    if (content.includes('eval(') || content.includes('Function(') ||
-        content.includes('setTimeout(') || content.includes('setInterval(')) {
-      return true;
-    }
+   // if (content.includes('eval(') || content.includes('Function(') ||
+   //     content.includes('setTimeout(') || content.includes('setInterval(')) {
+   //   return true;
+   // }
   }
 
   return hasForbiddenPattern;

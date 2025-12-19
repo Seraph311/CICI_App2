@@ -4,44 +4,14 @@ import "./ScriptManager.css";
 
 // Frontend validation patterns (subset for performance)
 const FORBIDDEN_PATTERNS = [
-  /\bsudo\b/i,
-  /\brm\s+-rf\b/i,
-  /\bshutdown\b/i,
-  /\breboot\b/i,
-  /\bhalt\b/i,
-  /\bfork\b/i,
-  /\bchown\b.*\broot\b/i,
-  /\bchmod\s+0{3,4}\b/i,
-  /eval\s*\(/i,
-  /exec\s*\(/i,
 ];
 
 const NODE_FORBIDDEN_PATTERNS = [
-  /require\s*\(\s*['"]child_process['"]/i,
-  /execSync\s*\(/i,
-  /spawnSync\s*\(/i,
-  /fork\s*\(/i,
-  /process\.(exit|kill|abort)\s*\(/i,
 ];
 
 function validateScript(content, type = 'bash') {
   if (!content) return "Script content is required";
 
-  // Check for general forbidden patterns
-  const hasForbiddenPattern = FORBIDDEN_PATTERNS.some(re => re.test(content));
-
-  // Additional checks for Node.js scripts
-  if (type === 'node') {
-    const hasNodeForbidden = NODE_FORBIDDEN_PATTERNS.some(re => re.test(content));
-    if (hasNodeForbidden) return "Script contains forbidden Node.js operations";
-
-    // Check for eval and Function constructor
-    if (content.includes('eval(') || content.includes('Function(')) {
-      return "Script contains potentially dangerous code (eval/Function)";
-    }
-  }
-
-  if (hasForbiddenPattern) return "Script contains forbidden operations";
 
   return null;
 }
