@@ -48,11 +48,6 @@ function inspectScript(content, type) {
 
   if (type === 'node') {
     const NODE_HARD_BLOCK = [
-      /require\s*\(\s*['"]child_process['"]\s*\)/i,
-      /execSync\s*\(/i,
-                    /spawnSync\s*\(/i,
-                                   /fork\s*\(/i,
-                                             /process\.exit\s*\(/i,
     ];
 
     if (NODE_HARD_BLOCK.some(re => re.test(content))) {

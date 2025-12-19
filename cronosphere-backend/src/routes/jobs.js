@@ -83,17 +83,6 @@ const FORBIDDEN_PATTERNS = [
 
 // Node.js specific forbidden patterns
 const NODE_FORBIDDEN_PATTERNS = [
-  /require\s*\(\s*['"]child_process['"]/i,
-  /require\s*\(\s*['"]fs['"]\s*\)\s*\.\s*(writeFileSync|appendFileSync|unlinkSync|rmSync|rmdirSync)\s*\(/i,
-  /require\s*\(\s*['"]os['"]\s*\)\s*\.\s*(userInfo|hostname|totalmem|freemem|cpus)/i,
-  /execSync\s*\(/i,
-  /spawnSync\s*\(/i,
-  /fork\s*\(/i,
-  /process\.(exit|kill|abort)\s*\(/i,
-  /require\s*\(\s*['"]net['"]/i,
-  /require\s*\(\s*['"]http['"]/i,
-  /require\s*\(\s*['"]https['"]/i,
-  /\.listen\s*\(/i,
 ];
 
 function isForbidden(content, type = 'bash') {
