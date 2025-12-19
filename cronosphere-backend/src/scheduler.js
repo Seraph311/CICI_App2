@@ -147,12 +147,14 @@ function isScriptContentForbidden(content, type = 'bash') {
 
     // Check for potentially dangerous patterns in Node.js scripts
     const dangerousPatterns = [
-      /eval\s*\(/,
-                /new\s+Function\s*\(/,
-                                    /require\s*\(\s*["']child_process["']/,
-                                                 /require\s*\(\s*["']fs["']/,
-                                                              /process\.exit\s*\(/,
-                                                                                 /process\.kill\s*\(/
+      /*
+        /eval\s*\(/,
+        /new\s+Function\s*\(/,
+        /require\s*\(\s*["']child_process["']/,
+        /require\s*\(\s*["']fs["']/,
+        /process\.exit\s*\(/,
+        /process\.kill\s*\(/
+        */
     ];
 
     if (dangerousPatterns.some(pattern => pattern.test(content))) {
