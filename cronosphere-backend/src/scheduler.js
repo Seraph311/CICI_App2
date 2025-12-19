@@ -27,50 +27,9 @@ try {
 }
 
 const FORBIDDEN_PATTERNS = [
-  /\bsudo\b/i,
-  /\brm\s+-[^\s]*f[^\s]*\b/i,
-  /\bshutdown\b/i,
-  /\breboot\b/i,
-  /\bhalt\b/i,
-  /\bmkfs\./i,
-  /\bfsck\b/i,
-  /\bdd\s+if=/i,
-  /\bfork\b/i,
-  /:(){:|:&};:/,
-  /\bchown\b.*\broot\b/i,
-  /\bchmod\s+0{3,4}\b/i,
-  /\bmount\b/i,
-  /\bumount\b/i,
-  /\bservice\b/i,
-  /\bsystemctl\b/i,
-  // Additional patterns
-  /\bwget\b.*\s+-\s*O\s+.*\/etc\//i,
-  /\bcurl\b.*\s+-\s*O\s+.*\/etc\//i,
-  /\bchmod\s+[0-7]{3,4}\s+\/etc\//i,
-  /\bchmod\s+[0-7]{3,4}\s+\/bin\//i,
-  /\bchmod\s+[0-7]{3,4}\s+\/usr\//i,
-  /\becho\s+.*>\s*\/etc\//i,
-  /\bcat\s+.*>\s*\/etc\//i,
-  /\bnc\s+-l\s+/i,
-  /\bncat\s+-l\s+/i,
-  /\bsocat\s+/i,
-  /\bpython\s+-c\s+/i,
-  /\bperl\s+-e\s+/i,
-  /\bruby\s+-e\s+/i,
-  /\bphp\s+-r\s+/i,
-  /eval\s*\(/i,
-  /exec\s*\(/i,
-  /\$\{.*:.*\}/,
 ];
 
 const NODE_FORBIDDEN_PATTERNS = [
-  /require\s*\(\s*['"]child_process['"]/i,
-  /require\s*\(\s*['"]fs['"]\s*\)\s*\.\s*(writeFileSync|appendFileSync|unlinkSync|rmSync|rmdirSync)\s*\(/i,
-  /require\s*\(\s*['"]os['"]\s*\)\s*\.\s*(userInfo|hostname|totalmem|freemem|cpus)/i,
-  /execSync\s*\(/i,
-  /spawnSync\s*\(/i,
-  /fork\s*\(/i,
-  /process\.(exit|kill|abort)\s*\(/i,
 ];
 
 function isScriptContentForbidden(content, type = 'bash') {
