@@ -53,7 +53,9 @@ async function pingRenderService() {
       duration
     };
   } catch (error) {
-    return { success: false, error: error.message };
+    // Handle the case where error might not have a message property
+    const errorMessage = error?.message || error?.toString() || 'Unknown error';
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -63,17 +65,18 @@ cron.schedule('*/10 * * * *', async () => {
   if (result.success) {
     log(`✅ Keep-alive ping: ${result.status} (${result.duration}ms)`);
   } else {
-    warn(`⚠️ Keep-alive failed: ${result.error || 'Unknown error'}`);
+    warn(`⚠️ Keep-alive failed: ${result.error || result.reason || 'Unknown error'}`);
   }
 });
 
 // Run immediately on startup
 setTimeout(async () => {
   const result = await pingRenderService();
-  console.log(result.success ?
-  `🚀 Initial keep-alive: ${result.status} (${result.duration}ms)` :
-  `⚠️ Initial keep-alive failed: ${result.error}`
-  );
+  if (result.success) {
+    console.log(`🚀 Initial keep-alive: ${result.status} (${result.duration}ms)`);
+  } else {
+    console.log(`⚠️ Initial keep-alive failed: ${result.error || result.reason || 'Unknown error'}`);
+  }
 }, 5000);
 
 // ensure /tmp/scripts exists
