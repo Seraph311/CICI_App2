@@ -32,6 +32,47 @@ const FORBIDDEN_PATTERNS = [
 const NODE_FORBIDDEN_PATTERNS = [
 ];
 
+// === SHARED MODULE CACHE ===
+const sharedModuleCache = new Map();
+
+/**
+ * Pre-load heavy modules at startup
+ */
+async function preloadCommonModules() {
+  console.log('📦 Pre-loading common modules...');
+
+  // List of heavy modules to pre-load
+  const heavyModules = [
+    { name: 'discord.js', test: 'version' },
+    { name: 'minecraft-server-util', test: 'status' },
+    { name: 'axios', test: 'version' },
+    { name: 'node-fetch', test: 'version' },
+    { name: 'ws', test: 'version' }
+  ];
+
+  for (const module of heavyModules) {
+    try {
+      const start = Date.now();
+      const mod = require(module.name);
+      const loadTime = Date.now() - start;
+
+      sharedModuleCache.set(module.name, mod);
+      console.log(`   ✅ ${module.name} loaded in ${loadTime}ms`);
+    } catch (err) {
+      if (err.code !== 'MODULE_NOT_FOUND') {
+        console.log(`   ⚠️ ${module.name}: ${err.message}`);
+      }
+    }
+  }
+
+  console.log('✅ Pre-loaded modules:', Array.from(sharedModuleCache.keys()));
+}
+
+// Pre-load modules on startup
+preloadCommonModules().catch(err => {
+  console.warn('Could not pre-load modules:', err.message);
+});
+
 function isScriptContentForbidden(content, type = 'bash') {
   if (!content) return false;
 
@@ -94,6 +135,121 @@ async function cleanupUserTempDir(userTempDir) {
     warn(`⚠️ Failed to cleanup temp directory ${userTempDir}: ${err.message}`);
     return false;
   }
+}
+
+/**
+ * Create a Node.js script wrapper with shared module support
+ */
+async function createNodeScriptWrapper(originalContent, projectRoot, nodeModulesPath) {
+  // List of modules that can be shared
+  const shareableModules = Array.from(sharedModuleCache.keys());
+
+  return `
+  // === SHARED MODULE LOADER ===
+  const sharedModules = new Map();
+
+  // Function to get shared module
+  function getSharedModule(moduleName) {
+    if (sharedModules.has(moduleName)) {
+      return sharedModules.get(moduleName);
+    }
+
+    // These modules are pre-loaded by the parent process
+    const preloadedModules = ${JSON.stringify(shareableModules)};
+
+    if (preloadedModules.includes(moduleName)) {
+      // Send request to parent process for module
+      process.send && process.send({ type: 'GET_MODULE', module: moduleName });
+
+      // For now, fall back to normal require
+      try {
+        const mod = require(moduleName);
+        sharedModules.set(moduleName, mod);
+        return mod;
+      } catch (err) {
+        throw err;
+      }
+    }
+
+    return null;
+  }
+
+  // Override require to use shared modules
+  const originalRequire = require;
+  const Module = require('module');
+  const originalResolveFilename = Module._resolveFilename;
+
+  // Enhanced module resolution
+  Module._resolveFilename = function(request, parent, isMain) {
+    try {
+      return originalResolveFilename.call(this, request, parent, isMain);
+    } catch (err) {
+      if (err.code === 'MODULE_NOT_FOUND') {
+        // Try project's node_modules first
+        try {
+          return require.resolve(request, { paths: ['${nodeModulesPath}'] });
+        } catch (e1) {
+          // Try default paths
+          const defaultPaths = require.resolve.paths(request) || [];
+          for (const p of defaultPaths) {
+            try {
+              return require.resolve(request, { paths: [p] });
+            } catch (e3) {
+              // Continue
+            }
+          }
+        }
+      }
+      throw err;
+    }
+  };
+
+  // Patch require to intercept heavy modules
+  require = function(moduleName) {
+    // Check if this is a heavy module we want to optimize
+    const heavyModules = ['discord.js', 'minecraft-server-util', 'axios', 'node-fetch', 'ws'];
+
+    for (const heavyModule of heavyModules) {
+      if (moduleName === heavyModule || moduleName.startsWith(heavyModule + '/')) {
+        const shared = getSharedModule(heavyModule);
+        if (shared) {
+          return shared;
+        }
+        break;
+      }
+    }
+
+    // For other modules, use normal require
+    return originalRequire.apply(this, arguments);
+  };
+
+  // Set up environment
+  process.env.NODE_PATH = '${nodeModulesPath}:' + (process.env.NODE_PATH || '');
+  process.env.PROJECT_ROOT = '${projectRoot}';
+
+  // Add project's node_modules to require paths
+  if (require.resolve.paths) {
+    const originalPaths = require.resolve.paths;
+    require.resolve.paths = function(request) {
+      const paths = originalPaths.call(this, request) || [];
+      return ['${nodeModulesPath}', ...paths];
+    };
+  }
+
+  console.log('=== Script Environment ===');
+  console.log('Project root:', process.env.PROJECT_ROOT);
+  console.log('Node path:', process.env.NODE_PATH);
+  console.log('Shared modules available:', ${JSON.stringify(shareableModules)});
+
+  // === ORIGINAL SCRIPT ===
+  try {
+    ${originalContent}
+  } catch (scriptErr) {
+    console.error('❌ Script execution error:', scriptErr.message);
+    console.error('Stack:', scriptErr.stack);
+    process.exit(1);
+  }
+  `;
 }
 
 /**
@@ -164,15 +320,14 @@ async function runJobNow(job) {
       const nodeModulesPath = path.join(projectRoot, 'node_modules');
 
       // Debug logging
-      console.log('=== DEBUG: Module Resolution ===');
+      console.log('=== SCRIPT EXECUTION INFO ===');
+      console.log('Job:', name);
       console.log('Project root:', projectRoot);
-      console.log('Node modules path:', nodeModulesPath);
-      console.log('Node modules exists?', fs.existsSync(nodeModulesPath));
-      console.log('discord.js exists?', fs.existsSync(path.join(nodeModulesPath, 'discord.js')));
-      console.log('Script path:', filepath);
+      console.log('Node modules:', nodeModulesPath);
       console.log('Script type:', script.type);
+      console.log('Shared modules:', Array.from(sharedModuleCache.keys()));
 
-      // Set environment variables for the job with NODE_PATH
+      // Set environment variables for the job
       const env = {
         ...process.env,
         USER_TEMP_DIR: userTempDir,
@@ -180,97 +335,47 @@ async function runJobNow(job) {
         USER_ID: owner.toString(),
         JOB_NAME: name,
         SCRIPT_ID: script_id.toString(),
-        NODE_PATH: `${nodeModulesPath}:${process.env.NODE_PATH || ''}`
+        NODE_PATH: `${nodeModulesPath}:${process.env.NODE_PATH || ''}`,
+        PROJECT_ROOT: projectRoot,
+        // Increase Node.js memory and timeout settings
+        NODE_OPTIONS: '--max-old-space-size=512 --max-semi-space-size=64',
+        UV_THREADPOOL_SIZE: '4'
       };
 
       // Spawn the appropriate interpreter
       if (script.type === 'node') {
-        // For Node.js scripts, we need to modify them to handle module resolution
+        // For Node.js scripts, create wrapper with shared module support
         const originalContent = await fs.promises.readFile(filepath, 'utf8');
-
-        // Create a wrapper that handles module resolution
-        const wrapperContent = `
-        // Module resolution wrapper for Render environment
-        const Module = require('module');
-        const originalResolveFilename = Module._resolveFilename;
-        const path = require('path');
-
-        const projectRoot = '${projectRoot.replace(/'/g, "\\'")}';
-        const nodeModulesPath = path.join(projectRoot, 'node_modules');
-
-        Module._resolveFilename = function(request, parent, isMain) {
-          try {
-            return originalResolveFilename.call(this, request, parent, isMain);
-          } catch (err) {
-            if (err.code === 'MODULE_NOT_FOUND') {
-              // Try project's node_modules
-              try {
-                return require.resolve(request, { paths: [nodeModulesPath] });
-              } catch (e1) {
-                // Try parent directory's node_modules
-                if (parent && parent.filename) {
-                  const parentDir = path.dirname(parent.filename);
-                  const parentNodeModules = path.join(parentDir, 'node_modules');
-                  try {
-                    return require.resolve(request, { paths: [parentNodeModules] });
-                  } catch (e2) {
-                    // Try default paths
-                    const defaultPaths = require.resolve.paths(request) || [];
-                    for (const p of defaultPaths) {
-                      try {
-                        return require.resolve(request, { paths: [p] });
-                      } catch (e3) {
-                        // Continue
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            throw err;
-          }
-        };
-
-        // Add project's node_modules to require paths
-        if (!require.resolve.paths) {
-          require.resolve.paths = function(request) {
-            return [nodeModulesPath];
-          };
-        } else {
-          const originalPaths = require.resolve.paths;
-          require.resolve.paths = function(request) {
-            const paths = originalPaths.call(this, request) || [];
-            return [nodeModulesPath, ...paths];
-          };
-        }
-
-        // Load the original script
-        try {
-          // First test if we can load discord.js
-          console.log('Attempting to load dependencies...');
-
-          ${originalContent}
-
-        } catch (scriptErr) {
-          console.error('Script execution error:', scriptErr.message);
-          console.error('Stack:', scriptErr.stack);
-          process.exit(1);
-        }
-        `;
+        const wrappedContent = await createNodeScriptWrapper(originalContent, projectRoot, nodeModulesPath);
 
         // Write the wrapped script
-        await fs.promises.writeFile(filepath, wrapperContent, { mode: 0o700 });
+        await fs.promises.writeFile(filepath, wrappedContent, { mode: 0o700 });
 
+        // Spawn with increased timeout and better settings
         child = spawn(process.execPath || 'node', [filepath], {
-          timeout: 120000, // Increased timeout for Discord bot startup
-          env: env,
-          cwd: projectRoot  // Run from project root
+          timeout: 300000, // 5 minutes timeout (increased from 2)
+        env: env,
+        cwd: projectRoot,
+        stdio: ['pipe', 'pipe', 'pipe', 'ipc'] // Add IPC for module sharing
         });
+
+        // Handle IPC messages for module sharing
+        child.on('message', (message) => {
+          if (message.type === 'GET_MODULE' && sharedModuleCache.has(message.module)) {
+            child.send({
+              type: 'MODULE_RESPONSE',
+              module: message.module,
+              // Can't actually send the module object, but we can send metadata
+              available: true
+            });
+          }
+        });
+
       } else { // bash
         child = spawn('bash', [filepath], {
-          timeout: 60000,
+          timeout: 120000, // 2 minutes for bash scripts
           env: env,
-          cwd: userTempDir  // Bash scripts run in temp dir
+          cwd: userTempDir
         });
       }
 
@@ -283,13 +388,19 @@ async function runJobNow(job) {
         const status = code === 0 ? 'success' : 'error';
         const finished_at = new Date();
         const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+        const timedOut = signal === 'SIGTERM' && duration >= 300; // 5 minutes
 
         try {
           await pool.query(
             'UPDATE job_runs SET status=$1, output=$2, finished_at=$3 WHERE id=$4',
             [status, (out || '(no output)').trim(), finished_at, runId]
           );
-          info(`✅ [${new Date().toISOString()}] Job #${id} "${name}" completed: ${status.toUpperCase()}`);
+
+          if (timedOut) {
+            info(`⏰ [${new Date().toISOString()}] Job #${id} "${name}" TIMED OUT after ${duration}s`);
+          } else {
+            info(`✅ [${new Date().toISOString()}] Job #${id} "${name}" completed: ${status.toUpperCase()}`);
+          }
           log(`   ├─ Duration: ${duration}s`);
           log(`   └─ Output: ${out.trim() || '(no output)'}`);
         } catch (dbErr) {
@@ -331,9 +442,9 @@ async function runJobNow(job) {
       };
 
       child = exec(command, {
-        timeout: 60000,
+        timeout: 120000, // 2 minutes for commands
         env: env,
-        cwd: userTempDir  // Run in user's temp directory
+        cwd: userTempDir
       }, async (err, stdout, stderr) => {
         const set = runningJobs.get(id);
         if (set) {
@@ -418,7 +529,7 @@ export async function scheduleJob(job, runNow = false) {
   });
 
   scheduledJobs.set(job.id, task);
-  info(`⏰ Scheduled job #${job.id}: "${job.name}" (${job.schedule})`);
+  info(`⏰ Scheduled job #${job.id}: "${name}" (${job.schedule})`);
 }
 
 /**
