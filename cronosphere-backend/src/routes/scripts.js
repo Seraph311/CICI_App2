@@ -19,16 +19,9 @@ const VALID_TYPES = new Set(['bash', 'node']);
  *   SECURITY RULES
  * ========================= */
 const HARD_BLOCK = [
-  /\bsudo\b/i,
-/\b(systemctl|reboot|shutdown|mount|umount)\b/i,
-/\brm\s+-rf\s+\/\b/i,
-/\bdd\s+if=/i,
 ];
 
 const SOFT_WARN = [
-  /\bcurl\b/i,
-/\bwget\b/i,
-/\bchmod\b/i,
 ];
 
 /* =========================
