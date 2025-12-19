@@ -174,13 +174,15 @@ async function runJobNow(job) {
         child = spawn(process.execPath || 'node', [filepath], {
           timeout: 60000,
           env: env,
-          cwd: userTempDir  // Run in user's temp directory
+          // cwd: userTempDir  // Run in user's temp directory
+          cwd: process.cwd()
         });
       } else { // bash
         child = spawn('bash', [filepath], {
           timeout: 60000,
           env: env,
-          cwd: userTempDir  // Run in user's temp directory
+          // cwd: userTempDir  // Run in user's temp directory
+          cwd: process.cwd()
         });
       }
 
