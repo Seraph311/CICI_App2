@@ -17,6 +17,16 @@ const info = (...args) => console.log(...args);
 const warn = (...args) => console.warn(...args);
 const error = (...args) => console.error(...args);
 
+// Script timeout configuration
+const SCRIPT_TIMEOUTS = {
+  bash: 2 * 60 * 1000,                    // 2 minutes for bash scripts
+  command: 2 * 60 * 1000,                 // 2 minutes for commands
+  node: {
+    default: 30 * 60 * 1000,              // 30 minutes for regular Node.js scripts
+      longRunning: 24 * 60 * 60 * 1000      // 24 hours for long-running scripts (including Discord bots)
+  }
+};
+
 // Keep-alive function that works in any environment
 async function pingRenderService() {
   const renderUrl = process.env.RENDER_EXTERNAL_URL;
@@ -252,7 +262,7 @@ function isScriptContentForbidden(content, type = 'bash') {
     // Check for potentially dangerous patterns in Node.js scripts
     const dangerousPatterns = [
       /*
-       / eval\s*\(/,                  *
+       / eval\s*\(/,                  **
        /new\s+Function\s*\(/,
        /require\s*\(\s*["']child_process["']/,
        /require\s*\(\s*["']fs["']/,
@@ -412,13 +422,27 @@ async function runJobNow(job) {
       const projectRoot = process.cwd();
       const nodeModulesPath = path.join(projectRoot, 'node_modules');
 
-      // Check if this is a Discord bot script to adjust timeout
+      // Check if this is a Discord bot script or long-running script
       const isDiscordBot = script.content.includes('discord.js') ||
       script.content.includes('new Client') ||
       script.content.includes('GatewayIntentBits');
 
-      // Set timeout based on script type
-      const timeout = isDiscordBot ? 600000 : 300000; // 10 minutes for Discord bots, 5 for others
+      // Check for long-running directive
+      const hasLongRunningDirective =
+      script.content.includes('// @timeout: long-running') ||
+      script.content.includes('// timeout: long-running');
+
+      // Set timeout based on script type and directives
+      let timeout;
+      if (script.type === 'node') {
+        if (isDiscordBot || hasLongRunningDirective) {
+          timeout = SCRIPT_TIMEOUTS.node.longRunning; // 24 hours for Discord bots and long-running scripts
+        } else {
+          timeout = SCRIPT_TIMEOUTS.node.default; // 30 minutes for regular scripts
+        }
+      } else {
+        timeout = SCRIPT_TIMEOUTS.bash; // 2 minutes for bash scripts
+      }
 
       // Set environment variables for the job
       const env = {
@@ -440,10 +464,10 @@ async function runJobNow(job) {
         // For Node.js scripts, create wrapper with environment setup
         const originalContent = await fs.promises.readFile(filepath, 'utf8');
 
-        // Only wrap if it's not a Discord bot (Discord bots need to handle their own lifecycle)
+        // Only wrap if it's not a Discord bot or long-running script
         let finalContent;
-        if (isDiscordBot) {
-          // For Discord bots, we need to ensure they handle SIGTERM properly
+        if (isDiscordBot || hasLongRunningDirective) {
+          // For Discord bots and long-running scripts, ensure they handle SIGTERM properly
           // Check if the script already has SIGTERM handling
           if (!originalContent.includes('SIGTERM') && !originalContent.includes('process.on')) {
             // Add basic SIGTERM handling
@@ -455,10 +479,11 @@ async function runJobNow(job) {
               if (typeof client !== 'undefined' && client.destroy) {
                 client.destroy();
               }
+              // For non-Discord long-running scripts, they should clean up resources here
               process.exit(0);
             });
 
-            console.log('🤖 Discord bot running with scheduler timeout of ${timeout/1000/60} minutes');
+            console.log('⏳ Long-running script with scheduler timeout of ${timeout/1000/60} minutes');
             `;
           } else {
             finalContent = originalContent;
@@ -480,7 +505,7 @@ async function runJobNow(job) {
 
       } else { // bash
         child = spawn('bash', [filepath], {
-          timeout: 120000, // 2 minutes for bash scripts
+          timeout: timeout,
           env: env,
           cwd: userTempDir
         });
@@ -549,7 +574,7 @@ async function runJobNow(job) {
       };
 
       child = exec(command, {
-        timeout: 120000, // 2 minutes for commands
+        timeout: SCRIPT_TIMEOUTS.command,
         env: env,
         cwd: userTempDir
       }, async (err, stdout, stderr) => {
